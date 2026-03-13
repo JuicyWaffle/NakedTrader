@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NakedTrader Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --border: #1e1e2e;
+    --accent: #00ff88;
+    --text: #c8c8d8;
+    --text-dim: #55556a;
+    --text-bright: #eeeef8;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Space Grotesk', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    position: relative;
+    z-index: 1;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(10,10,15,0.9);
+    backdrop-filter: blur(10px);
+  }
+
+  .logo {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-weight: 700;
+    color: #000;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  header h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  header p {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .status-bar {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  main {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 28px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+  }
+
+  .chart-card canvas {
+    width: 100% !important;
+    max-height: 400px;
+  }
+
+  .chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .chart-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+
+  .chart-subtitle {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-bottom: 4px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stat-card .bot-name {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .stat-card .color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .stat-card .value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .stat-card .value.positive { color: var(--accent); }
+  .stat-card .value.negative { color: #ff4466; }
+
+  /* Placeholder charts */
+  .placeholder-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .placeholder {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    min-height: 200px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .placeholder .label {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .placeholder .sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: #333;
+  }
+
+  .last-update {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">NT</div>
+  <div>
+    <h1>NakedTrader</h1>
+    <p>Bot Performance Dashboard</p>
+  </div>
+  <div class="status-bar">
+    <div class="status-dot"></div>
+    <span id="last-update">laden...</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Bot stats -->
+  <div>
+    <div class="section-label">Huidige performance per bot</div>
+    <div class="stats-row" id="stats-row"></div>
+  </div>
+
+  <!-- Chart 1: Bot Performance -->
+  <div>
+    <div class="section-label">Grafiek 1 &mdash; Rendement over tijd</div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Cumulatief rendement (%)</div>
+          <div class="chart-subtitle">Dagelijkse performance van alle bots</div>
+        </div>
+      </div>
+      <canvas id="performanceChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Chart 2 + 3: Placeholders -->
+  <div class="placeholder-row">
+    <div class="placeholder">
+      <div class="label">Grafiek 2</div>
+      <div class="sub">coming soon</div>
+    </div>
+    <div class="placeholder">
+      <div class="label">Grafiek 3</div>
+      <div class="sub">coming soon</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+let chart = null;
+
+async function loadDashboard() {
+  try {
+    const res = await fetch('/api/performance');
+    const data = await res.json();
+    renderStats(data);
+    renderChart(data);
+    document.getElementById('last-update').textContent =
+      'update: ' + new Date().toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'});
+  } catch (e) {
+    console.error('Dashboard load error:', e);
+  }
+}
+
+function renderStats(data) {
+  const container = document.getElementById('stats-row');
+  container.innerHTML = '';
+
+  data.bots.forEach(bot => {
+    const lastEntry = data.entries[data.entries.length - 1];
+    const value = lastEntry ? (lastEntry[bot.id] || 0) : 0;
+    const sign = value >= 0 ? '+' : '';
+    const cls = value >= 0 ? 'positive' : 'negative';
+
+    const card = document.createElement('div');
+    card.className = 'stat-card';
+    card.innerHTML = `
+      <div class="bot-name">
+        <span class="color-dot" style="background:${bot.color}"></span>
+        ${esc(bot.name)}
+      </div>
+      <div class="value ${cls}">${sign}${value.toFixed(2)}%</div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function renderChart(data) {
+  const ctx = document.getElementById('performanceChart').getContext('2d');
+  const labels = data.entries.map(e => e.date);
+
+  const datasets = data.bots.map(bot => ({
+    label: bot.name,
+    data: data.entries.map(e => e[bot.id] || 0),
+    borderColor: bot.color,
+    backgroundColor: bot.color + '15',
+    borderWidth: 2,
+    pointRadius: 3,
+    pointHoverRadius: 6,
+    pointBackgroundColor: bot.color,
+    tension: 0.3,
+    fill: false,
+  }));
+
+  if (chart) {
+    chart.data.labels = labels;
+    chart.data.datasets = datasets;
+    chart.update();
+    return;
+  }
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#c8c8d8',
+            font: { family: "'JetBrains Mono', monospace", size: 11 },
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 16,
+          },
+        },
+        tooltip: {
+          backgroundColor: '#111118',
+          borderColor: '#1e1e2e',
+          borderWidth: 1,
+          titleFont: { family: "'JetBrains Mono', monospace", size: 11 },
+          bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
+          titleColor: '#eeeef8',
+          bodyColor: '#c8c8d8',
+          padding: 10,
+          callbacks: {
+            label: function(ctx) {
+              const v = ctx.parsed.y;
+              return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+            }
+          }
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: '#55556a',
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+            maxRotation: 45,
+          },
+          grid: { color: 'rgba(30,30,46,0.5)' },
+        },
+        y: {
+          ticks: {
+            color: '#55556a',
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+            callback: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%',
+          },
+          grid: { color: 'rgba(30,30,46,0.5)' },
+        },
+      },
+    },
+  });
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Initial load + auto-refresh
+loadDashboard();
+setInterval(loadDashboard, 60000);
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ venv/
 # Runtime data
 trades.json
 dashboard.png
+bot_performance.json
 
 # OS
 .DS_Store

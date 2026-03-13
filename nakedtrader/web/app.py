@@ -47,7 +47,6 @@ def init_store(config: Config) -> PerformanceStore:
     _config = config
     data_dir = str(PROJECT_ROOT / config.data_dir)
     _store = PerformanceStore(data_dir=data_dir, starting_capital=config.total_capital)
-    _store.backfill_history(months=36)
     return _store
 
 

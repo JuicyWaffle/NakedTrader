@@ -1,0 +1,20 @@
+# Trading bot — dependencies
+# Installeer met: pip install -r requirements.txt
+
+# ── Vereist (altijd) ────────────────────────
+# (geen externe packages nodig voor pure paper mode)
+
+# ── Vereist voor live IBKR ──────────────────
+ib_insync>=0.9.86
+
+# ── Vereist voor live Kraken ────────────────
+krakenex>=2.1.0
+pykrakenapi>=0.3.2
+
+# ── Vereist voor live Binance (alternatief) ──
+python-binance>=1.0.19
+
+# ── Dashboard visualisatie ──────────────────
+matplotlib>=3.7
+pandas>=2.0
+numpy>=1.24

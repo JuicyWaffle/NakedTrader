@@ -43,7 +43,7 @@ class MeanReversionStrategy(BaseStrategy):
 
     PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR"}
 
-    def generate_signals(self, kraken=None, ibkr=None) -> list[TradeSignal]:
+    def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []
 
         # Zelfaanpassing: BB-multiplier o.b.v. win-rate
@@ -81,7 +81,8 @@ class MeanReversionStrategy(BaseStrategy):
                     continue
 
                 # Signaal: prijs onder BB + Z-score sterk negatief
-                if latest_close < latest_lower and latest_z < -2.0:
+                z_threshold = -1.2 if aggressive else -2.0
+                if latest_close < latest_lower and latest_z < z_threshold:
                     price = _kraken_ticker(pair) or float(latest_close)
 
                     # Lage VIX -> markt is rustig -> verbreed SL

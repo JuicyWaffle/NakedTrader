@@ -226,11 +226,18 @@
   .portfolio-card .pc-positions {
     border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px;
   }
+  .portfolio-card .pc-positions .pos-header {
+    font-family: var(--mono); font-size: 8px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; padding: 2px 0 4px;
+  }
   .portfolio-card .pc-pos {
-    font-family: var(--mono); font-size: 9px; color: var(--text);
-    display: flex; justify-content: space-between; padding: 2px 0;
+    font-family: var(--mono); font-size: 10px; color: var(--text);
+    display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; padding: 3px 0;
+    border-top: 1px solid rgba(30,30,46,0.4);
   }
   .portfolio-card .pc-pos .pos-sym { color: var(--text-bright); font-weight: 600; }
+  .portfolio-card .pc-pos .pos-right { text-align: right; }
 
   .reset-btn {
     font-family: var(--mono); font-size: 9px; font-weight: 600;
@@ -422,14 +429,17 @@ function renderPortfolio(portfolio) {
     let posHtml = '';
     if (p.positions && p.positions.length > 0) {
       posHtml = '<div class="pc-positions">';
+      posHtml += '<div class="pos-header"><span>Asset</span><span>Qty</span><span>Waarde</span><span style="text-align:right">PnL</span></div>';
       p.positions.forEach(pos => {
         const posPnlClass = pos.pnl_eur >= 0 ? 'positive' : 'negative';
         const posSign = pos.pnl_eur >= 0 ? '+' : '';
+        const sym = pos.symbol.replace('XXBT', 'BTC').replace('XETH', 'ETH').replace('ZEUR', '/EUR').replace('USD', '/USD');
         posHtml += `
           <div class="pc-pos">
-            <span class="pos-sym">${esc(pos.symbol)}</span>
-            <span>qty: ${pos.quantity < 1 ? pos.quantity.toFixed(6) : pos.quantity.toFixed(2)}</span>
-            <span class="${posPnlClass}">${posSign}&euro;${pos.pnl_eur.toFixed(0)}</span>
+            <span class="pos-sym">${esc(sym)}</span>
+            <span>${pos.quantity < 1 ? pos.quantity.toFixed(6) : pos.quantity.toFixed(2)}</span>
+            <span>&euro;${pos.market_value.toLocaleString('nl-NL', {minimumFractionDigits:0, maximumFractionDigits:0})}</span>
+            <span class="pos-right ${posPnlClass}">${posSign}&euro;${pos.pnl_eur.toFixed(0)}</span>
           </div>`;
       });
       posHtml += '</div>';

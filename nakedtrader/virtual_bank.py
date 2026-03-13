@@ -113,7 +113,7 @@ class VirtualBankBot:
 
     def _check_signals(self, sid: str, strategy):
         """Roep strategy.generate_signals() aan, open posities als cash beschikbaar."""
-        signals = strategy.generate_signals()
+        signals = strategy.generate_signals(aggressive=True)
         if not signals:
             return
 

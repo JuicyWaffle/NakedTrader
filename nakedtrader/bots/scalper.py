@@ -42,7 +42,7 @@ class ArbitrageStrategy(BaseStrategy):
     MAX_SPREAD_PCT = 0.002   # max 0.2% spread
     MIN_BOOK_DEPTH = 10      # minimaal 10 levels
 
-    def generate_signals(self, kraken=None, ibkr=None) -> list[TradeSignal]:
+    def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []
         for market, pair in self.PAIRS.items():
             try:
@@ -66,7 +66,8 @@ class ArbitrageStrategy(BaseStrategy):
                 # Order book imbalance
                 imb = order_book_imbalance(bids, asks)
 
-                if abs(imb) > self.MIN_IMBALANCE:
+                imb_threshold = 0.15 if aggressive else self.MIN_IMBALANCE
+                if abs(imb) > imb_threshold:
                     price = (best_bid + best_ask) / 2
                     direction = "long" if imb > 0 else "short"
                     win_rate = self._get_rolling_win_rate()

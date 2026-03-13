@@ -48,5 +48,6 @@ class BaseStrategy:
         self,
         kraken: Optional[KrakenBroker] = None,
         ibkr: Optional[IBKRBroker] = None,
+        aggressive: bool = False,
     ) -> list[TradeSignal]:
         raise NotImplementedError

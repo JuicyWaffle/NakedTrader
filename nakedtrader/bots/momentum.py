@@ -41,7 +41,7 @@ class MomentumStrategy(BaseStrategy):
 
     PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR"}
 
-    def generate_signals(self, kraken=None, ibkr=None) -> list[TradeSignal]:
+    def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []
         for market, pair in self.PAIRS.items():
             try:
@@ -77,7 +77,16 @@ class MomentumStrategy(BaseStrategy):
                     crossover = ema_f[-1] > ema_s[-1] and ema_f[-2] <= ema_s[-2]
                     rsi_ok = 40 < rsi_vals[-1] < 75  # niet overbought, niet oversold
 
-                    if crossover and rsi_ok:
+                    if aggressive:
+                        # Aggressief: ook signaal bij sterk momentum (gap > 0.3%) of gunstige RSI
+                        ema_gap_pct = (ema_f[-1] - ema_s[-1]) / ema_s[-1]
+                        strong_momentum = ema_f[-1] > ema_s[-1] and ema_gap_pct > 0.003
+                        rsi_ok = 35 < rsi_vals[-1] < 80
+                        trigger = (crossover or strong_momentum) and rsi_ok
+                    else:
+                        trigger = crossover and rsi_ok
+
+                    if trigger:
                         price = _kraken_ticker(pair) or float(closes[-1])
                         win_rate = self._get_rolling_win_rate()
                         signals.append(TradeSignal(

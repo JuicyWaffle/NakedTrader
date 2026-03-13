@@ -41,7 +41,7 @@ class BreakoutStrategy(BaseStrategy):
 
     PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/USD": "SOLUSD"}
 
-    def generate_signals(self, kraken=None, ibkr=None) -> list[TradeSignal]:
+    def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []
 
         # Per-broker win-rate uit custom state
@@ -79,7 +79,13 @@ class BreakoutStrategy(BaseStrategy):
                 atr_expanding = latest_atr > prev_atr
 
                 # Signaal: close boven vorige Donchian upper + ATR expanding
-                if latest_close > latest_dc_upper and atr_expanding:
+                if aggressive:
+                    # Aggressief: ook near-breakout (binnen 0.5%) zonder ATR vereiste
+                    near_breakout = latest_close > latest_dc_upper * 0.995
+                    trigger = near_breakout
+                else:
+                    trigger = latest_close > latest_dc_upper and atr_expanding
+                if trigger:
                     price = _kraken_ticker(pair) or float(latest_close)
                     win_rate = self._get_rolling_win_rate()
 

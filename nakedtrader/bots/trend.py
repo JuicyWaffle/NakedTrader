@@ -40,7 +40,7 @@ class TrendFollowingStrategy(BaseStrategy):
         broker="ibkr",
     )
 
-    def generate_signals(self, kraken=None, ibkr=None) -> list[TradeSignal]:
+    def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []
         try:
             if not (ibkr and ibkr.ib and ibkr.ib.isConnected()):

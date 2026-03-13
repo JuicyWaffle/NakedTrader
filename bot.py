@@ -135,8 +135,8 @@ class KellyPositionSizer:
 
 class IBKRBroker:
     """
-    Verbinding met Interactive Brokers via ib_insync.
-    pip install ib_insync
+    Verbinding met Interactive Brokers via ib_async.
+    pip install ib_async
     TWS of IB Gateway moet draaien op de achtergrond.
     """
 
@@ -145,7 +145,7 @@ class IBKRBroker:
         self.ib = None
 
     def connect(self):
-        from ib_insync import IB
+        from ib_async import IB
         self.ib = IB()
         self.ib.connect(
             self.config.ibkr_host,
@@ -165,7 +165,7 @@ class IBKRBroker:
         exchange: str = "SMART",
         currency: str = "USD",
     ) -> Optional[float]:
-        from ib_insync import Stock
+        from ib_async import Stock
         contract = Stock(symbol, exchange, currency)
         self.ib.qualifyContracts(contract)
         ticker = self.ib.reqMktData(contract)
@@ -183,7 +183,7 @@ class IBKRBroker:
         currency: str = "USD",
     ):
         """Bracket order: entry + stop-loss + take-profit in één keer."""
-        from ib_insync import Stock
+        from ib_async import Stock
         contract = Stock(symbol, exchange, currency)
         self.ib.qualifyContracts(contract)
 

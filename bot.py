@@ -209,6 +209,44 @@ class IBKRBroker:
     def get_portfolio(self) -> list:
         return self.ib.portfolio()
 
+    def get_historical_bars(
+        self,
+        symbol: str,
+        duration: str = "60 D",
+        bar_size: str = "1 day",
+        what_to_show: str = "MIDPOINT",
+        exchange: str = "IDEALPRO",
+        currency: str = "USD",
+    ) -> list:
+        """
+        Haal historische bars op via IB Gateway.
+
+        Args:
+            symbol: bv. "EUR" (voor EURUSD forex)
+            duration: bv. "60 D", "1 Y"
+            bar_size: bv. "1 day", "1 hour", "15 mins"
+            what_to_show: "MIDPOINT", "TRADES", "BID", "ASK"
+            exchange: "IDEALPRO" voor forex, "SMART" voor aandelen
+            currency: tegenvaluta
+
+        Returns:
+            list van BarData objecten met .date, .open, .high, .low, .close, .volume
+        """
+        from ib_async import Forex
+        contract = Forex(symbol + currency)
+        self.ib.qualifyContracts(contract)
+        bars = self.ib.reqHistoricalData(
+            contract,
+            endDateTime="",
+            durationStr=duration,
+            barSizeSetting=bar_size,
+            whatToShow=what_to_show,
+            useRTH=True,
+            formatDate=1,
+        )
+        log.info(f"IBKR historisch: {symbol}{currency}  {len(bars)} bars ({bar_size})")
+        return bars
+
 
 # ─────────────────────────────────────────────
 # 4. BINANCE CONNECTOR
@@ -394,6 +432,30 @@ class KrakenBroker:
         self._check_errors(response, "Kraken cancel")
         log.info(f"Kraken order geannuleerd: {txid}")
         return response
+
+    def get_ohlc(self, pair: str, interval: int = 60, since: int = None) -> list:
+        """
+        Haal OHLC (candlestick) data op via de publieke Kraken API.
+
+        Args:
+            pair: bv. "XXBTZEUR", "XETHZEUR"
+            interval: interval in minuten (1, 5, 15, 30, 60, 240, 1440, 10080, 21600)
+            since: Unix timestamp — geeft candles na dit tijdstip
+
+        Returns:
+            list van [time, open, high, low, close, vwap, volume, count]
+        """
+        import krakenex
+        api = self.api if self.api else krakenex.API()
+        params = {"pair": pair, "interval": interval}
+        if since is not None:
+            params["since"] = since
+        response = api.query_public("OHLC", params)
+        self._check_errors(response, f"Kraken OHLC {pair}")
+        # Resultaat bevat pair-key + "last" — we willen de pair-key
+        result = response["result"]
+        ohlc_key = [k for k in result if k != "last"][0]
+        return result[ohlc_key]
 
     def get_balances(self) -> dict:
         """Geeft alle saldi terug als dict {asset: balance}."""

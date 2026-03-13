@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 """NakedTrader Web Dashboard — lightweight server (stdlib only)."""
 
+import sys
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from datetime import datetime
+
+# Voeg project root toe aan sys.path zodat we strategies kunnen importeren
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 PORT = 8081
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -54,12 +60,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self._serve_file(PUBLIC_DIR / "index.html", "text/html")
+        elif self.path == "/strategies":
+            self._serve_file(PUBLIC_DIR / "strategies.html", "text/html")
         elif self.path == "/api/performance":
             data = load_data()
             self._json(200, data)
         elif self.path == "/api/bots":
             data = load_data()
             self._json(200, {"bots": data["bots"]})
+        elif self.path == "/api/strategies":
+            self._serve_strategies()
         elif self.path.startswith("/public/"):
             self._serve_file(PUBLIC_DIR / self.path[len("/public/"):])
         else:
@@ -125,6 +135,32 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json(400, {"error": str(e)})
 
+    def _serve_strategies(self):
+        try:
+            from strategies import STRATEGIES
+            result = []
+            for sid, strategy in STRATEGIES.items():
+                m = strategy.meta
+                result.append({
+                    "id": m.id,
+                    "name": m.name,
+                    "color": m.color,
+                    "description": m.description,
+                    "description_nl": m.description_nl,
+                    "risk_level": m.risk_level,
+                    "risk_score": m.risk_score,
+                    "expected_return_min": m.expected_return_min,
+                    "expected_return_max": m.expected_return_max,
+                    "markets": m.markets,
+                    "indicators": m.indicators,
+                    "timeframe": m.timeframe,
+                    "broker": m.broker,
+                    "active": m.active,
+                })
+            self._json(200, {"strategies": result})
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
     def _serve_file(self, filepath, content_type=None):
         filepath = Path(filepath)
         if not filepath.is_file():
@@ -157,9 +193,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     import socket
-    HTTPServer.allow_reuse_address = True
-    server = HTTPServer(("0.0.0.0", PORT), DashboardHandler)
-    print(f"NakedTrader Dashboard op http://localhost:{PORT}")
+
+    class FastHTTPServer(HTTPServer):
+        """HTTPServer die getfqdn() overslaat (kan hangen op macOS)."""
+        allow_reuse_address = True
+        def server_bind(self):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind(self.server_address)
+            self.server_address = self.socket.getsockname()
+            host, port = self.server_address[:2]
+            self.server_name = host or "localhost"
+            self.server_port = port
+
+    server = FastHTTPServer(("0.0.0.0", PORT), DashboardHandler)
+    print(f"NakedTrader Dashboard op http://localhost:{PORT}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -17,12 +17,17 @@ Architectuur:
   TradingBot          — orkestreert alles
 """
 
+import os
 import time
 import logging
 import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from datetime import datetime
+
+import yaml
+from dotenv import load_dotenv
 
 from paper_engine import PaperEngine, PerformanceTracker
 
@@ -601,26 +606,63 @@ class TradingBot:
 # 8. OPSTARTEN
 # ─────────────────────────────────────────────
 
-if __name__ == "__main__":
-    config = Config(
-        paper_mode=True,              # ← standaard AAN; zet op False voor live
-        total_capital=10_000.0,
-        kelly_fraction=0.5,           # half-Kelly
-        stop_loss_pct=0.05,
-        take_profit_pct=0.15,
-        ibkr_port=7497,               # 7497 paper IBKR, 7496 live
-        crypto_broker="kraken",       # "kraken" of "binance"
-        kraken_api_key="JOUW_KEY",    # vul in of gebruik os.environ
-        kraken_api_secret="JOUW_SECRET",
-        binance_testnet=True,
-        trade_log_path="trades.json",
+def load_config(config_path="config.yml", env_path=".env"):
+    """Laad configuratie uit config.yml + secrets uit .env"""
+    project_dir = Path(__file__).resolve().parent
+
+    # Laad .env (secrets)
+    env_file = project_dir / env_path
+    load_dotenv(env_file)
+
+    # Laad config.yml
+    cfg_file = project_dir / config_path
+    yml = {}
+    if cfg_file.is_file():
+        with open(cfg_file) as f:
+            yml = yaml.safe_load(f) or {}
+
+    return Config(
+        paper_mode=yml.get("paper_mode", True),
+        total_capital=yml.get("total_capital", 10_000.0),
+        kelly_fraction=yml.get("kelly_fraction", 0.5),
+        max_position_pct=yml.get("max_position_pct", 0.20),
+        stop_loss_pct=yml.get("stop_loss_pct", 0.05),
+        take_profit_pct=yml.get("take_profit_pct", 0.15),
+        max_open_positions=yml.get("max_open_positions", 5),
+        trade_log_path=yml.get("trade_log_path", "trades.json"),
+        ibkr_host=yml.get("ibkr_host", "127.0.0.1"),
+        ibkr_port=yml.get("ibkr_port", 7497),
+        ibkr_client_id=yml.get("ibkr_client_id", 1),
+        crypto_broker=yml.get("crypto_broker", "kraken"),
+        kraken_api_key=os.environ.get("KRAKEN_API_KEY", ""),
+        kraken_api_secret=os.environ.get("KRAKEN_API_SECRET", ""),
+        binance_api_key=os.environ.get("BINANCE_API_KEY", ""),
+        binance_api_secret=os.environ.get("BINANCE_API_SECRET", ""),
+        binance_testnet=yml.get("binance_testnet", True),
     )
+
+
+if __name__ == "__main__":
+    config = load_config()
+    interval = 60  # default
+
+    # Probeer interval uit config.yml te lezen
+    cfg_file = Path(__file__).resolve().parent / "config.yml"
+    if cfg_file.is_file():
+        with open(cfg_file) as f:
+            yml = yaml.safe_load(f) or {}
+            interval = yml.get("interval_seconds", 60)
+
+    log.info(f"Modus: {'PAPER' if config.paper_mode else 'LIVE'}")
+    log.info(f"Kapitaal: €{config.total_capital:,.2f}")
+    log.info(f"IBKR: {config.ibkr_host}:{config.ibkr_port}")
+    log.info(f"Crypto broker: {config.crypto_broker}")
+    log.info(f"Interval: {interval}s")
 
     bot = TradingBot(config)
 
     try:
         bot.connect_brokers()
-        # interval_seconds=5 voor snelle demo; gebruik 60+ voor productie
-        bot.run_loop(interval_seconds=5)
+        bot.run_loop(interval_seconds=interval)
     finally:
         bot.disconnect_brokers()

@@ -2,7 +2,8 @@
 # Installeer met: pip install -r requirements.txt
 
 # ── Vereist (altijd) ────────────────────────
-# (geen externe packages nodig voor pure paper mode)
+pyyaml>=6.0
+python-dotenv>=1.0
 
 # ── Vereist voor live IBKR ──────────────────
 ib_insync>=0.9.86

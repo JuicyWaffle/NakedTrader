@@ -1,0 +1,20 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Runtime data
+trades.json
+dashboard.png
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

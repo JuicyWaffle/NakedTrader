@@ -122,6 +122,27 @@ class RiskReport:
 
 
 # ─────────────────────────────────────────────
+# TRANSACTION (virtual bank ledger)
+# ─────────────────────────────────────────────
+
+@dataclass
+class Transaction:
+    """Individuele buy/sell transactie in het virtuele ledger."""
+    id: str                        # "TX000001"
+    timestamp: str                 # ISO format
+    strategy_id: str               # "momentum", "breakout", etc.
+    symbol: str                    # "AAPL", "XXBTZEUR"
+    tx_type: str                   # "buy" | "sell"
+    price: float                   # uitvoeringsprijs
+    quantity: float                # aantal eenheden
+    size_eur: float                # positiegrootte in EUR
+    buy_price: float = 0.0         # oorspronkelijke aankoopprijs (alleen bij sell)
+    pnl_eur: float = 0.0           # winst/verlies in EUR (alleen bij sell)
+    pnl_pct: float = 0.0           # winst/verlies in % (alleen bij sell)
+    trade_id: str = ""             # referentie naar TradeRecord
+
+
+# ─────────────────────────────────────────────
 # STRATEGY META
 # ─────────────────────────────────────────────
 

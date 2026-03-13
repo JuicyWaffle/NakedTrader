@@ -18,6 +18,7 @@ from pathlib import Path
 
 from nakedtrader.types import TradeRecord, DailySummary, MonthlySummary
 from .simulator import RealisticSimulator, STRATEGY_PROFILES
+from .ledger import VirtualLedger
 from .rollup import (
     compute_daily_summary,
     compute_monthly_summary,
@@ -42,6 +43,9 @@ class PerformanceStore:
         (self.data_dir / "daily").mkdir(exist_ok=True)
         (self.data_dir / "monthly").mkdir(exist_ok=True)
 
+        # Virtual bank ledger
+        self.ledger = VirtualLedger(data_dir=str(self.data_dir))
+
         # In-memory buffer voor intraday weergave
         self._today_trades: list[TradeRecord] = []
         self._today_date: str = datetime.now().strftime("%Y-%m-%d")
@@ -59,6 +63,7 @@ class PerformanceStore:
             self._today_trades.append(trade)
 
         self._append_trade_to_file(trade)
+        self.ledger.record_trade(trade)
 
     def _append_trade_to_file(self, trade: TradeRecord):
         """Append één trade aan trades.json."""
@@ -317,6 +322,10 @@ class PerformanceStore:
             "starting_balance": round(self.starting_capital / n_strats, 2),
             "strategies": dict(strategies),
         }
+
+    def get_recent_transactions(self, strategy_id: str = None, limit: int = 20) -> list[dict]:
+        """Retourneer recente transacties uit het virtual bank ledger."""
+        return self.ledger.get_recent(strategy_id=strategy_id, limit=limit)
 
     def get_performance_json(self) -> dict:
         """Legacy backward compat: overzicht performance data."""

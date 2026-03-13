@@ -164,6 +164,41 @@
   }
   .health-card .hrow .hl { color: var(--text-dim); }
   .health-card .hrow .hv { font-size: 11px; font-weight: 600; }
+
+  /* Transaction table */
+  .tx-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .tx-table th {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    text-align: left;
+    padding: 6px 4px 4px;
+  }
+
+  .tx-table td {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 4px;
+    color: var(--text);
+    border-top: 1px solid rgba(30,30,46,0.5);
+  }
+
+  .tx-table .tx-buy { color: var(--accent); font-weight: 600; }
+  .tx-table .tx-sell { color: #0088ff; font-weight: 600; }
+  .tx-table .pnl-pos { color: var(--accent); }
+  .tx-table .pnl-neg { color: #ff4466; }
+  .tx-table .tx-dim { color: var(--text-dim); }
+
+  .health-card { min-height: 180px; }
 </style>
 </head>
 <body>
@@ -232,11 +267,11 @@
     <div class="chart-card">
       <div class="chart-header">
         <div>
-          <div class="chart-title">Adaptive Metrics per Strategie</div>
-          <div class="chart-subtitle">Win rate, Sharpe ratio, cooldown status</div>
+          <div class="chart-title">Transacties per Bot</div>
+          <div class="chart-subtitle">Laatste 20 transacties — buy/sell met winst</div>
         </div>
       </div>
-      <div id="health-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:8px 0"></div>
+      <div id="health-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;padding:8px 0"></div>
     </div>
   </div>
 
@@ -304,20 +339,23 @@ async function loadChart(tab) {
 
 async function loadDashboard() {
   try {
-    const [dailyRes, monthlyRes, adaptRes] = await Promise.all([
+    const [dailyRes, monthlyRes, adaptRes, txRes] = await Promise.all([
       fetch('/api/charts/daily?days=90'),
       fetch('/api/charts/monthly?months=36'),
       fetch('/api/adaptive').catch(() => ({ ok: false })),
+      fetch('/api/virtual-bank/transactions?limit=20').catch(() => ({ ok: false })),
     ]);
 
     const dailyData = await dailyRes.json();
     const monthlyData = await monthlyRes.json();
     let adaptive = {};
     try { if (adaptRes.ok) adaptive = (await adaptRes.json()).adaptive || {}; } catch(e) {}
+    let transactions = [];
+    try { if (txRes.ok) transactions = (await txRes.json()).transactions || []; } catch(e) {}
 
     renderStats(monthlyData);
     renderDrawdown(dailyData);
-    renderHealth(adaptive);
+    renderHealth(adaptive, transactions);
     loadChart(currentTab);
 
     document.getElementById('last-update').textContent =
@@ -633,38 +671,90 @@ function renderDrawdown(dailyData) {
 }
 
 /* ── Health grid ── */
-function renderHealth(adaptive) {
+function renderHealth(adaptive, transactions) {
   const grid = document.getElementById('health-grid');
   grid.innerHTML = '';
+
+  // Groepeer transacties per strategie
+  const txByStrategy = {};
+  (transactions || []).forEach(tx => {
+    const sid = tx.strategy_id;
+    if (!txByStrategy[sid]) txByStrategy[sid] = [];
+    txByStrategy[sid].push(tx);
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
 
   Object.keys(BOT_NAMES).forEach(sid => {
     const a = adaptive[sid];
     const el = document.createElement('div');
     el.className = 'health-card';
 
-    if (!a) {
-      el.innerHTML = `
-        <div class="hname" style="color:${BOT_COLORS[sid]}">${esc(BOT_NAMES[sid])}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:#55556a">Wacht op trades...</div>
+    // Header met adaptive metrics
+    let metricsHtml = '';
+    if (a) {
+      const wr = (a.rolling_win_rate * 100).toFixed(1);
+      const sh = a.rolling_sharpe.toFixed(2);
+      const wrC = a.rolling_win_rate >= 0.55 ? '#00ff88' : a.rolling_win_rate >= 0.45 ? '#c8c8d8' : '#ff4466';
+      const shC = a.rolling_sharpe >= 1.0 ? '#00ff88' : a.rolling_sharpe >= 0 ? '#c8c8d8' : '#ff4466';
+      const status = a.in_cooldown
+        ? '<span style="color:#ff4466">COOLDOWN</span>'
+        : '<span style="color:#00ff88">OK</span>';
+      metricsHtml = `
+        <div style="display:flex;gap:12px;margin-bottom:6px;font-family:var(--mono);font-size:10px">
+          <span><span class="hl">WR </span><span style="color:${wrC};font-weight:600">${wr}%</span></span>
+          <span><span class="hl">SR </span><span style="color:${shC};font-weight:600">${sh}</span></span>
+          <span><span class="hl">N </span><span style="font-weight:600">${a.trades_count}</span></span>
+          <span>${status}</span>
+        </div>
       `;
-      grid.appendChild(el);
-      return;
     }
 
-    const wr = (a.rolling_win_rate * 100).toFixed(1);
-    const sh = a.rolling_sharpe.toFixed(2);
-    const wrC = a.rolling_win_rate >= 0.55 ? '#00ff88' : a.rolling_win_rate >= 0.45 ? '#c8c8d8' : '#ff4466';
-    const shC = a.rolling_sharpe >= 1.0 ? '#00ff88' : a.rolling_sharpe >= 0 ? '#c8c8d8' : '#ff4466';
-    const status = a.in_cooldown
-      ? '<span style="color:#ff4466;font-size:9px;font-family:var(--mono)">COOLDOWN</span>'
-      : '<span style="color:#00ff88;font-size:9px;font-family:var(--mono)">OK</span>';
+    // Transactietabel
+    const sidTxs = (txByStrategy[sid] || []).slice(-20);
+    let tableHtml = '';
+    if (sidTxs.length > 0) {
+      let rows = '';
+      sidTxs.forEach(tx => {
+        const typeClass = tx.tx_type === 'buy' ? 'tx-buy' : 'tx-sell';
+        const typeLabel = tx.tx_type === 'buy' ? 'BUY' : 'SELL';
+
+        // Timestamp formatting
+        const txDate = tx.timestamp.slice(0, 10);
+        const txTime = tx.timestamp.slice(11, 16);
+        const timeStr = txDate === today ? txTime : txDate.slice(5) + ' ' + txTime;
+
+        // Winst kolom (alleen bij sell)
+        let pnlHtml = '<span class="tx-dim">—</span>';
+        if (tx.tx_type === 'sell' && tx.buy_price) {
+          const pnlClass = tx.pnl_eur >= 0 ? 'pnl-pos' : 'pnl-neg';
+          const sign = tx.pnl_eur >= 0 ? '+' : '';
+          pnlHtml = '<span class="' + pnlClass + '">' + sign + '€' + tx.pnl_eur.toFixed(0) + ' (' + sign + tx.pnl_pct.toFixed(1) + '%)</span>';
+        }
+
+        rows += '<tr>' +
+          '<td class="tx-dim">' + esc(timeStr) + '</td>' +
+          '<td class="' + typeClass + '">' + typeLabel + '</td>' +
+          '<td>' + esc(tx.symbol) + '</td>' +
+          '<td>€' + tx.price.toFixed(2) + '</td>' +
+          '<td>' + pnlHtml + '</td>' +
+          '</tr>';
+      });
+
+      tableHtml = `
+        <table class="tx-table">
+          <thead><tr><th>Tijd</th><th>Type</th><th>Symbol</th><th>Prijs</th><th>Winst</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    } else {
+      tableHtml = '<div style="font-family:var(--mono);font-size:11px;color:#55556a;margin-top:10px;border-top:1px solid var(--border);padding-top:8px">Geen transacties</div>';
+    }
 
     el.innerHTML = `
       <div class="hname" style="color:${BOT_COLORS[sid]}">${esc(BOT_NAMES[sid])}</div>
-      <div class="hrow"><span class="hl">Win Rate</span><span class="hv" style="color:${wrC}">${wr}%</span></div>
-      <div class="hrow"><span class="hl">Sharpe</span><span class="hv" style="color:${shC}">${sh}</span></div>
-      <div class="hrow"><span class="hl">Trades</span><span class="hv" style="color:var(--text)">${a.trades_count}</span></div>
-      <div class="hrow"><span class="hl">Status</span>${status}</div>
+      ${metricsHtml}
+      ${tableHtml}
     `;
     grid.appendChild(el);
   });

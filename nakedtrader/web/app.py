@@ -99,6 +99,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/money-management":
             self._serve_money_management()
 
+        elif path == "/api/virtual-bank/transactions":
+            strategy = params.get("strategy", [None])[0]
+            limit = int(params.get("limit", ["20"])[0])
+            txs = _store.get_recent_transactions(strategy_id=strategy, limit=limit)
+            self._json(200, {"transactions": txs})
+
         elif path.startswith("/public/"):
             self._serve_file(PUBLIC_DIR / path[len("/public/"):])
         else:

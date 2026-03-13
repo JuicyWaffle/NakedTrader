@@ -10,7 +10,6 @@ ib_async>=1.0.0
 
 # ── Vereist voor live Kraken ────────────────
 krakenex>=2.1.0
-pykrakenapi>=0.3.2
 
 # ── Vereist voor live Binance (alternatief) ──
 python-binance>=1.0.19

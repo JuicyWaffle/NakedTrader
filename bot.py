@@ -281,8 +281,7 @@ class BinanceBroker:
 
 class KrakenBroker:
     """
-    Verbinding met Kraken via krakenex + pykrakenapi.
-    pip install krakenex pykrakenapi
+    Verbinding met Kraken via krakenex (direct, zonder pykrakenapi).
 
     Kraken gebruikt andere symboolnotatie dan Binance:
       Bitcoin  → XXBTZEUR  (BTC/EUR)  of  XBTUSDT
@@ -293,28 +292,35 @@ class KrakenBroker:
     def __init__(self, config):
         self.config = config
         self.api = None
-        self.k = None
+
+    def _check_errors(self, response, context="Kraken"):
+        """Controleer op API fouten en gooi RuntimeError als nodig."""
+        errors = response.get("error", [])
+        if errors:
+            raise RuntimeError(f"{context}: {errors}")
 
     def connect(self):
         import krakenex
-        from pykrakenapi import KrakenAPI
         self.api = krakenex.API(
             key=self.config.kraken_api_key,
             secret=self.config.kraken_api_secret,
         )
-        self.k = KrakenAPI(self.api)
         # Verbinding testen via accountbalans
-        balance = self.k.get_account_balance()
-        log.info(f"Kraken verbonden. Beschikbare assets: {list(balance.index)}")
-        return balance
+        response = self.api.query_private("Balance")
+        self._check_errors(response, "Kraken connect")
+        assets = [a for a, v in response["result"].items() if float(v) > 0]
+        log.info(f"Kraken verbonden. Assets met saldo: {assets}")
 
     def get_price(self, pair: str) -> float:
         """
         Haal de huidige biedprijs op.
         pair: bv. "XXBTZEUR", "XETHZEUR", "XBTUSDT"
         """
-        ticker = self.k.get_ticker_information(pair)
-        price = float(ticker["b"][pair][0])  # beste biedprijs
+        response = self.api.query_public("Ticker", {"pair": pair})
+        self._check_errors(response, f"Kraken prijs {pair}")
+        # Eerste (en enige) key in result bevat de ticker data
+        ticker_key = list(response["result"].keys())[0]
+        price = float(response["result"][ticker_key]["b"][0])  # beste biedprijs
         log.info(f"Kraken prijs {pair}: {price}")
         return price
 
@@ -331,8 +337,7 @@ class KrakenBroker:
             "ordertype": "market",
             "volume": str(round(volume, 8)),
         })
-        if response.get("error"):
-            raise RuntimeError(f"Kraken order fout: {response['error']}")
+        self._check_errors(response, "Kraken market order")
         tx_ids = response["result"].get("txid", [])
         log.info(f"Kraken market order: {side} {volume} {pair}  txid={tx_ids}")
         return response["result"]
@@ -351,8 +356,6 @@ class KrakenBroker:
 
         Kraken heeft geen native OCO — beide orders staan open
         en je annuleert de andere zodra één geraakt wordt.
-        In een volgende versie kan dit geautomatiseerd worden
-        via de order-status polling.
         """
         # Stop-loss
         sl_response = self.api.query_private("AddOrder", {
@@ -362,8 +365,7 @@ class KrakenBroker:
             "price": str(round(stop_price, 2)),
             "volume": str(round(volume, 8)),
         })
-        if sl_response.get("error"):
-            raise RuntimeError(f"Kraken SL fout: {sl_response['error']}")
+        self._check_errors(sl_response, "Kraken SL")
 
         # Take-profit
         tp_response = self.api.query_private("AddOrder", {
@@ -373,32 +375,31 @@ class KrakenBroker:
             "price": str(round(take_profit_price, 2)),
             "volume": str(round(volume, 8)),
         })
-        if tp_response.get("error"):
-            raise RuntimeError(f"Kraken TP fout: {tp_response['error']}")
+        self._check_errors(tp_response, "Kraken TP")
 
         sl_id = sl_response["result"].get("txid", [])
         tp_id = tp_response["result"].get("txid", [])
-        log.info(
-            f"Kraken SL+TP: {pair}  SL={stop_price} (txid={sl_id})  ",
-            f"TP={take_profit_price} (txid={tp_id})",
-        )
+        log.info(f"Kraken SL+TP: {pair}  SL={stop_price} (txid={sl_id})  TP={take_profit_price} (txid={tp_id})")
         return {"stop_loss": sl_response["result"], "take_profit": tp_response["result"]}
 
     def get_open_orders(self) -> dict:
         """Geeft alle open orders terug."""
         response = self.api.query_private("OpenOrders")
+        self._check_errors(response, "Kraken open orders")
         return response.get("result", {}).get("open", {})
 
     def cancel_order(self, txid: str):
         """Annuleer een order op basis van zijn transactie-ID."""
         response = self.api.query_private("CancelOrder", {"txid": txid})
+        self._check_errors(response, "Kraken cancel")
         log.info(f"Kraken order geannuleerd: {txid}")
         return response
 
     def get_balances(self) -> dict:
         """Geeft alle saldi terug als dict {asset: balance}."""
-        balance = self.k.get_account_balance()
-        return {asset: float(bal) for asset, bal in balance["vol"].items() if float(bal) > 0}
+        response = self.api.query_private("Balance")
+        self._check_errors(response, "Kraken balance")
+        return {asset: float(vol) for asset, vol in response["result"].items() if float(vol) > 0}
 
 # ─────────────────────────────────────────────
 # 6. HANDELSSIGNAAL

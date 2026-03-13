@@ -9,6 +9,7 @@ __pycache__/
 venv/
 
 # Runtime data
+data/
 trades.json
 dashboard.png
 bot_performance.json

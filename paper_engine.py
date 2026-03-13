@@ -48,6 +48,7 @@ class TradeRecord:
 
     kelly_fraction: float
     win_probability: float
+    strategy_id: str = ""        # ID van de strategie die deze trade genereerde
     notes: str = ""
 
 
@@ -272,6 +273,7 @@ class PaperEngine:
             outcome=outcome,
             kelly_fraction=round(kelly_fraction, 4),
             win_probability=signal.win_probability,
+            strategy_id=getattr(signal, "strategy_id", ""),
             notes=signal.notes,
         )
 

@@ -287,15 +287,31 @@
     </div>
   </div>
 
-  <!-- Chart 2 + 3: Placeholders -->
-  <div class="placeholder-row">
-    <div class="placeholder">
-      <div class="label">Grafiek 2</div>
-      <div class="sub">coming soon</div>
+  <!-- Chart 2: Drawdown -->
+  <div>
+    <div class="section-label">Grafiek 2 &mdash; Drawdown</div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Portfolio Drawdown (%)</div>
+          <div class="chart-subtitle">Afstand tot peak — rode lijn = 15% limiet</div>
+        </div>
+      </div>
+      <canvas id="drawdownChart"></canvas>
     </div>
-    <div class="placeholder">
-      <div class="label">Grafiek 3</div>
-      <div class="sub">coming soon</div>
+  </div>
+
+  <!-- Chart 3: Strategy Health -->
+  <div>
+    <div class="section-label">Grafiek 3 &mdash; Strategy Health</div>
+    <div class="chart-card" id="health-card">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Adaptive Metrics per Strategie</div>
+          <div class="chart-subtitle">Win rate, Sharpe ratio, cooldown status</div>
+        </div>
+      </div>
+      <div id="health-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:8px 0"></div>
     </div>
   </div>
 
@@ -303,13 +319,22 @@
 
 <script>
 let chart = null;
+let ddChart = null;
 
 async function loadDashboard() {
   try {
-    const res = await fetch('/api/performance');
-    const data = await res.json();
+    const [perfRes, adaptRes] = await Promise.all([
+      fetch('/api/performance'),
+      fetch('/api/adaptive').catch(() => ({ json: () => ({ adaptive: {} }) })),
+    ]);
+    const data = await perfRes.json();
+    let adaptive = {};
+    try { adaptive = (await adaptRes.json()).adaptive || {}; } catch(e) {}
+
     renderStats(data);
     renderChart(data);
+    renderDrawdown(data);
+    renderHealth(adaptive, data);
     document.getElementById('last-update').textContent =
       'update: ' + new Date().toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'});
   } catch (e) {
@@ -421,6 +446,143 @@ function renderChart(data) {
         },
       },
     },
+  });
+}
+
+function renderDrawdown(data) {
+  const ctx = document.getElementById('drawdownChart').getContext('2d');
+  const labels = data.entries.map(e => e.date);
+
+  // Bereken drawdown per bot: track peak en bereken afstand
+  const datasets = data.bots.map(bot => {
+    let peak = 0;
+    const dd = data.entries.map(e => {
+      const val = e[bot.id] || 0;
+      if (val > peak) peak = val;
+      return peak > 0 ? -((peak - val) / Math.max(peak, 1)) * 100 : 0;
+    });
+    return {
+      label: bot.name,
+      data: dd,
+      borderColor: bot.color,
+      backgroundColor: bot.color + '20',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: true,
+    };
+  });
+
+  // Limiet lijn (-15%)
+  datasets.push({
+    label: 'Limiet (-15%)',
+    data: labels.map(() => -15),
+    borderColor: '#ff4466',
+    borderWidth: 1,
+    borderDash: [6, 3],
+    pointRadius: 0,
+    fill: false,
+  });
+
+  if (ddChart) {
+    ddChart.data.labels = labels;
+    ddChart.data.datasets = datasets;
+    ddChart.update();
+    return;
+  }
+
+  ddChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            color: '#c8c8d8',
+            font: { family: "'JetBrains Mono', monospace", size: 10 },
+            usePointStyle: true,
+            pointStyle: 'circle',
+            padding: 12,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: '#55556a', font: { family: "'JetBrains Mono'", size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(30,30,46,0.5)' },
+        },
+        y: {
+          ticks: {
+            color: '#55556a',
+            font: { family: "'JetBrains Mono'", size: 10 },
+            callback: v => v.toFixed(1) + '%',
+          },
+          grid: { color: 'rgba(30,30,46,0.5)' },
+          max: 2,
+        },
+      },
+    },
+  });
+}
+
+function renderHealth(adaptive, data) {
+  const grid = document.getElementById('health-grid');
+  grid.innerHTML = '';
+
+  const botMap = {};
+  (data.bots || []).forEach(b => { botMap[b.id] = b; });
+
+  const ids = Object.keys(adaptive);
+  if (ids.length === 0) {
+    // Toon placeholder als er nog geen adaptive data is
+    const names = {'momentum':'Momentum Rider','mean-reversion':'Mean Reversion','breakout':'Breakout Hunter','arbitrage':'Crypto Scalper','trend-follow':'Macro Trend'};
+    const colors = {'momentum':'#00ff88','mean-reversion':'#0088ff','breakout':'#ff4466','arbitrage':'#aa44ff','trend-follow':'#ffaa44'};
+    Object.keys(names).forEach(id => {
+      const el = document.createElement('div');
+      el.style.cssText = 'background:#0d0d14;border:1px solid #1e1e2e;border-radius:8px;padding:12px;';
+      el.innerHTML = `
+        <div style="font-family:var(--mono);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:${colors[id]};margin-bottom:8px">${esc(names[id])}</div>
+        <div style="font-family:var(--mono);font-size:11px;color:#55556a">Wacht op trades...</div>
+      `;
+      grid.appendChild(el);
+    });
+    return;
+  }
+
+  ids.forEach(id => {
+    const a = adaptive[id];
+    const bot = botMap[id] || { name: id, color: '#888' };
+    const wr = (a.rolling_win_rate * 100).toFixed(1);
+    const sh = a.rolling_sharpe.toFixed(2);
+    const wrColor = a.rolling_win_rate >= 0.55 ? '#00ff88' : a.rolling_win_rate >= 0.45 ? '#c8c8d8' : '#ff4466';
+    const shColor = a.rolling_sharpe >= 1.0 ? '#00ff88' : a.rolling_sharpe >= 0 ? '#c8c8d8' : '#ff4466';
+    const cooldown = a.in_cooldown ? '<span style="color:#ff4466;font-size:9px;font-family:var(--mono)">COOLDOWN</span>' : '<span style="color:#00ff88;font-size:9px;font-family:var(--mono)">OK</span>';
+
+    const el = document.createElement('div');
+    el.style.cssText = 'background:#0d0d14;border:1px solid #1e1e2e;border-radius:8px;padding:12px;';
+    el.innerHTML = `
+      <div style="font-family:var(--mono);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:${bot.color};margin-bottom:8px">${esc(bot.name)}</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:10px;color:#55556a">Win Rate</span>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${wrColor}">${wr}%</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:10px;color:#55556a">Sharpe</span>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${shColor}">${sh}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:10px;color:#55556a">Trades</span>
+        <span style="font-family:var(--mono);font-size:11px;color:#c8c8d8">${a.trades_count}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between">
+        <span style="font-family:var(--mono);font-size:10px;color:#55556a">Status</span>
+        ${cooldown}
+      </div>
+    `;
+    grid.appendChild(el);
   });
 }
 

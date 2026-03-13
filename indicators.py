@@ -8,6 +8,10 @@ Functies:
   roc(closes, period=12) -> np.ndarray
   bollinger_bands(closes, period=20, std_dev=2.0) -> (upper, middle, lower)
   atr(highs, lows, closes, period=14) -> np.ndarray
+  donchian_channels(highs, lows, period=20) -> (upper, lower, middle)
+  zscore(closes, period=20) -> np.ndarray
+  vix_proxy(closes, period=20) -> np.ndarray
+  order_book_imbalance(bids, asks) -> float
 """
 
 import numpy as np
@@ -115,3 +119,84 @@ def atr(
     for i in range(period + 1, len(closes)):
         out[i] = (out[i - 1] * (period - 1) + tr[i]) / period
     return out
+
+
+# ─────────────────────────────────────────────
+# DONCHIAN CHANNELS
+# ─────────────────────────────────────────────
+
+def donchian_channels(
+    highs: np.ndarray, lows: np.ndarray, period: int = 20
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Donchian Channels: (upper, lower, middle).
+    upper = hoogste high over period, lower = laagste low over period.
+    """
+    n = len(highs)
+    upper = np.full(n, np.nan, dtype=float)
+    lower = np.full(n, np.nan, dtype=float)
+    for i in range(period - 1, n):
+        upper[i] = np.max(highs[i - period + 1 : i + 1])
+        lower[i] = np.min(lows[i - period + 1 : i + 1])
+    middle = (upper + lower) / 2.0
+    return upper, lower, middle
+
+
+# ─────────────────────────────────────────────
+# Z-SCORE
+# ─────────────────────────────────────────────
+
+def zscore(closes: np.ndarray, period: int = 20) -> np.ndarray:
+    """Z-score: (close - SMA) / stdev over rolling window."""
+    out = np.full_like(closes, np.nan, dtype=float)
+    if len(closes) < period:
+        return out
+    for i in range(period - 1, len(closes)):
+        window = closes[i - period + 1 : i + 1]
+        mean = np.mean(window)
+        std = np.std(window, ddof=0)
+        if std > 0:
+            out[i] = (closes[i] - mean) / std
+        else:
+            out[i] = 0.0
+    return out
+
+
+# ─────────────────────────────────────────────
+# VIX PROXY (geannualiseerde rolling volatiliteit)
+# ─────────────────────────────────────────────
+
+def vix_proxy(closes: np.ndarray, period: int = 20) -> np.ndarray:
+    """
+    VIX proxy: geannualiseerde rolling volatiliteit van log-returns.
+    Formule: stdev(log_returns, period) * sqrt(252) * 100
+    """
+    out = np.full_like(closes, np.nan, dtype=float)
+    if len(closes) < 2:
+        return out
+    log_returns = np.log(closes[1:] / closes[:-1])
+    for i in range(period, len(log_returns) + 1):
+        window = log_returns[i - period : i]
+        out[i] = np.std(window, ddof=1) * np.sqrt(252) * 100
+    return out
+
+
+# ─────────────────────────────────────────────
+# ORDER BOOK IMBALANCE
+# ─────────────────────────────────────────────
+
+def order_book_imbalance(bids: list, asks: list) -> float:
+    """
+    Order book imbalance: (bid_volume - ask_volume) / (bid_volume + ask_volume).
+    Retourneert float van -1 (alleen asks) tot +1 (alleen bids).
+
+    Args:
+        bids: list van [prijs, volume] paren
+        asks: list van [prijs, volume] paren
+    """
+    bid_vol = sum(float(b[1]) for b in bids) if bids else 0.0
+    ask_vol = sum(float(a[1]) for a in asks) if asks else 0.0
+    total = bid_vol + ask_vol
+    if total == 0:
+        return 0.0
+    return (bid_vol - ask_vol) / total

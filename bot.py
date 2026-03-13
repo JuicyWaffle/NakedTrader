@@ -30,6 +30,8 @@ import yaml
 from dotenv import load_dotenv
 
 from paper_engine import PaperEngine, PerformanceTracker
+from adaptive import AdaptiveEngine
+from risk_manager import RiskManager, RiskLimits
 
 logging.basicConfig(
     level=logging.INFO,
@@ -56,11 +58,15 @@ class Config:
 
     # ── Risicobeheer ───────────────────────────
     stop_loss_pct: float = 0.05      # stop-loss op 5% verlies
-    take_profit_pct: float = 0.15    # take-profit op 15% winst
+    take_profit_pct: float = 0.10    # take-profit op 10% winst
     max_open_positions: int = 5      # max gelijktijdige posities
+    drawdown_limit_pct: float = 0.15 # halt bij 15% drawdown van peak
 
     # ── Logboek ────────────────────────────────
     trade_log_path: str = "trades.json"
+
+    # ── Adaptive state ────────────────────────
+    state_path: str = "strategy_state.json"
 
     # ── IBKR ───────────────────────────────────
     ibkr_host: str = "127.0.0.1"
@@ -208,6 +214,33 @@ class IBKRBroker:
 
     def get_portfolio(self) -> list:
         return self.ib.portfolio()
+
+    def get_stock_bars(
+        self,
+        symbol: str,
+        duration: str = "1 Y",
+        bar_size: str = "1 day",
+        exchange: str = "SMART",
+        currency: str = "USD",
+    ) -> list:
+        """
+        Haal historische bars op voor aandelen/ETFs (Stock contracts).
+        Gebruikt voor SPY, TLT, GLD etc. — regime detectie.
+        """
+        from ib_async import Stock
+        contract = Stock(symbol, exchange, currency)
+        self.ib.qualifyContracts(contract)
+        bars = self.ib.reqHistoricalData(
+            contract,
+            endDateTime="",
+            durationStr=duration,
+            barSizeSetting=bar_size,
+            whatToShow="TRADES",
+            useRTH=True,
+            formatDate=1,
+        )
+        log.info(f"IBKR stock bars: {symbol}  {len(bars)} bars ({bar_size})")
+        return bars
 
     def get_historical_bars(
         self,
@@ -457,6 +490,28 @@ class KrakenBroker:
         ohlc_key = [k for k in result if k != "last"][0]
         return result[ohlc_key]
 
+    def get_orderbook(self, pair: str, count: int = 25) -> dict:
+        """
+        Haal het orderboek op via de publieke Kraken Depth API.
+
+        Args:
+            pair: bv. "XXBTZEUR", "XETHZEUR"
+            count: aantal levels (max 500)
+
+        Returns:
+            dict met "bids" en "asks", elk een list van [prijs, volume, timestamp]
+        """
+        import krakenex
+        api = self.api if self.api else krakenex.API()
+        response = api.query_public("Depth", {"pair": pair, "count": count})
+        self._check_errors(response, f"Kraken orderbook {pair}")
+        result = response["result"]
+        book_key = [k for k in result][0]
+        return {
+            "bids": result[book_key].get("bids", []),
+            "asks": result[book_key].get("asks", []),
+        }
+
     def get_balances(self) -> dict:
         """Geeft alle saldi terug als dict {asset: balance}."""
         response = self.api.query_private("Balance")
@@ -481,6 +536,7 @@ class TradeSignal:
     expected_win_pct: float  # bv. 0.12  (12% gemiddelde winst)
     expected_loss_pct: float # bv. 0.06  (6% gemiddeld verlies)
     current_price: float
+    strategy_id: str = ""    # ID van de strategie die dit signaal genereerde
     notes: str = ""
 
 
@@ -542,6 +598,16 @@ class TradingBot:
         self.tracker = PerformanceTracker(config.trade_log_path)
         self.paper = PaperEngine(config, self.tracker)
 
+        # Adaptive + Risk
+        self.adaptive = AdaptiveEngine(config.state_path)
+        risk_limits = RiskLimits(
+            drawdown_limit_pct=config.drawdown_limit_pct,
+            default_sl_pct=config.stop_loss_pct,
+            default_tp_pct=config.take_profit_pct,
+            max_position_pct=config.max_position_pct,
+        )
+        self.risk_mgr = RiskManager(risk_limits, config.total_capital)
+
         self.ibkr: Optional[IBKRBroker] = None
         self.kraken: Optional[KrakenBroker] = None
         self.binance: Optional[BinanceBroker] = None
@@ -568,14 +634,42 @@ class TradingBot:
         log.info("Alle verbindingen gesloten")
 
     def process_signal(self, signal: TradeSignal):
-        """Verwerk één signaal: Kelly → positiebepaling → uitvoering."""
+        """
+        Verwerk één signaal via de nieuwe signal flow:
+        1. RiskManager: halted? (drawdown circuit-breaker)
+        2. AdaptiveEngine: cooldown? (verliesreeks check)
+        3. Kelly(adaptive win_rate) — rolling win-rate i.p.v. hardcoded
+        4. RiskManager: allow_trade? (per-strategie budget)
+        5. Execute met per-strategie SL/TP
+        6. Log → AdaptiveEngine.record_trade → RiskManager.update_capital
+        """
+        sid = signal.strategy_id or ""
 
         if len(self.open_positions) >= self.config.max_open_positions:
             log.warning(f"Max posities bereikt, {signal.symbol} overgeslagen")
             return
 
+        # 1. Drawdown circuit-breaker
+        if self.risk_mgr.halted:
+            log.warning(f"[RISK] Circuit-breaker actief — {signal.symbol} overgeslagen")
+            return
+
+        # 2. Cooldown check
+        if sid and self.adaptive.is_in_cooldown(sid):
+            log.info(f"[ADAPTIVE] {sid} in cooldown — {signal.symbol} overgeslagen")
+            return
+
+        # 3. Kelly met adaptive win-rate
+        win_prob = signal.win_probability
+        if sid:
+            adaptive_wr = self.adaptive.get_rolling_win_rate(sid)
+            state = self.adaptive.get_state(sid)
+            # Gebruik adaptive win-rate als er genoeg trades zijn
+            if len(state.recent_trades) >= 10:
+                win_prob = adaptive_wr
+
         kelly_frac = self.sizer.calculate(
-            signal.win_probability,
+            win_prob,
             signal.expected_win_pct,
             signal.expected_loss_pct,
         )
@@ -585,9 +679,25 @@ class TradingBot:
             log.debug(f"Positie te klein (€{size_eur:.2f}), {signal.symbol} overgeslagen")
             return
 
+        # 4. Per-strategie budget check
+        if sid and not self.risk_mgr.allow_trade(sid, size_eur):
+            return
+
+        # 5. Per-strategie SL/TP
+        risk_params = self.risk_mgr.get_risk_params(sid) if sid else {
+            "sl": self.config.stop_loss_pct,
+            "tp": self.config.take_profit_pct,
+        }
+        sl_pct = risk_params["sl"]
+        tp_pct = risk_params["tp"]
+
+        # Alloceer budget
+        if sid:
+            self.risk_mgr.allocate(sid, size_eur)
+
         if self.config.paper_mode:
             # ── PAPER: simuleer en log ─────────────
-            self.paper.process_signal(signal, kelly_frac, size_eur)
+            trade = self.paper.process_signal(signal, kelly_frac, size_eur)
 
         else:
             # ── LIVE: echte orders ─────────────────
@@ -598,27 +708,30 @@ class TradingBot:
                         symbol=signal.symbol,
                         quantity=quantity,
                         entry_price=signal.current_price,
-                        stop_loss_pct=self.config.stop_loss_pct,
-                        take_profit_pct=self.config.take_profit_pct,
+                        stop_loss_pct=sl_pct,
+                        take_profit_pct=tp_pct,
                     )
 
             elif signal.broker == "kraken" and self.kraken:
-                # Kraken: marktorder + aparte SL en TP orders
                 qty = round(size_eur / signal.current_price, 8)
                 self.kraken.place_market_order(signal.symbol, "buy", qty)
-                stop = round(signal.current_price * (1 - self.config.stop_loss_pct), 2)
-                tp = round(signal.current_price * (1 + self.config.take_profit_pct), 2)
+                stop = round(signal.current_price * (1 - sl_pct), 2)
+                tp = round(signal.current_price * (1 + tp_pct), 2)
                 self.kraken.place_stop_loss_take_profit(signal.symbol, qty, stop, tp)
 
             elif signal.broker == "binance" and self.binance:
                 qty = round(size_eur / signal.current_price, 5)
                 self.binance.place_market_order(signal.symbol, "BUY", qty)
-                stop = round(signal.current_price * (1 - self.config.stop_loss_pct), 2)
-                tp = round(signal.current_price * (1 + self.config.take_profit_pct), 2)
+                stop = round(signal.current_price * (1 - sl_pct), 2)
+                tp = round(signal.current_price * (1 + tp_pct), 2)
                 self.binance.place_oco_order(signal.symbol, qty, stop, tp)
 
-            # Live trades ook loggen (outcome wordt later bijgewerkt via broker callback)
-            self.paper.process_signal(signal, kelly_frac, size_eur)
+            trade = self.paper.process_signal(signal, kelly_frac, size_eur)
+
+        # 6. Log naar AdaptiveEngine + RiskManager
+        if sid and trade:
+            self.adaptive.record_trade(sid, trade.pnl_pct, trade.outcome)
+            self.risk_mgr.update_capital(trade.pnl_eur, sid)
 
         self.open_positions.append(signal.symbol)
 
@@ -690,9 +803,11 @@ def load_config(config_path="config.yml", env_path=".env"):
         kelly_fraction=yml.get("kelly_fraction", 0.5),
         max_position_pct=yml.get("max_position_pct", 0.20),
         stop_loss_pct=yml.get("stop_loss_pct", 0.05),
-        take_profit_pct=yml.get("take_profit_pct", 0.15),
+        take_profit_pct=yml.get("take_profit_pct", 0.10),
         max_open_positions=yml.get("max_open_positions", 5),
+        drawdown_limit_pct=yml.get("drawdown_limit_pct", 0.15),
         trade_log_path=yml.get("trade_log_path", "trades.json"),
+        state_path=yml.get("state_path", "strategy_state.json"),
         ibkr_host=yml.get("ibkr_host", "127.0.0.1"),
         ibkr_port=yml.get("ibkr_port", 7497),
         ibkr_client_id=yml.get("ibkr_client_id", 1),

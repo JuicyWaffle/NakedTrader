@@ -328,6 +328,53 @@
     font-size: 12px;
     color: var(--text-dim);
   }
+
+  /* Adaptive metrics */
+  .adaptive-row {
+    display: flex;
+    gap: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .adaptive-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+  }
+
+  .adaptive-metric .metric-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+  }
+
+  .adaptive-metric .metric-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .metric-value.good { color: var(--accent); }
+  .metric-value.warn { color: #ffaa44; }
+  .metric-value.bad { color: #ff4466; }
+  .metric-value.neutral { color: var(--text); }
+
+  .cooldown-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #ff4466;
+    background: rgba(255,68,102,0.1);
+    border: 1px solid rgba(255,68,102,0.2);
+  }
 </style>
 </head>
 <body>
@@ -354,16 +401,21 @@
 <script>
 async function loadStrategies() {
   try {
-    const res = await fetch('/api/strategies');
-    const data = await res.json();
-    renderStrategies(data.strategies);
+    const [stratRes, adaptRes] = await Promise.all([
+      fetch('/api/strategies'),
+      fetch('/api/adaptive').catch(() => ({ json: () => ({ adaptive: {} }) })),
+    ]);
+    const stratData = await stratRes.json();
+    let adaptData = {};
+    try { adaptData = (await adaptRes.json()).adaptive || {}; } catch(e) {}
+    renderStrategies(stratData.strategies, adaptData);
   } catch (e) {
     document.getElementById('strategies-grid').innerHTML =
       '<div class="loading">Fout bij laden: ' + esc(e.message) + '</div>';
   }
 }
 
-function renderStrategies(strategies) {
+function renderStrategies(strategies, adaptive) {
   const grid = document.getElementById('strategies-grid');
   grid.innerHTML = '';
 
@@ -397,14 +449,41 @@ function renderStrategies(strategies) {
     const statusClass = s.active ? 'active' : 'inactive';
     const statusText = s.active ? 'Actief' : 'Inactief';
 
+    // Adaptive metrics
+    const a = adaptive[s.id] || {};
+    const winRate = a.rolling_win_rate != null ? (a.rolling_win_rate * 100).toFixed(1) : '—';
+    const sharpe = a.rolling_sharpe != null ? a.rolling_sharpe.toFixed(2) : '—';
+    const trades = a.trades_count != null ? a.trades_count : 0;
+    const inCooldown = a.in_cooldown || false;
+
+    const wrClass = a.rolling_win_rate >= 0.55 ? 'good' : a.rolling_win_rate >= 0.45 ? 'neutral' : a.rolling_win_rate != null ? 'bad' : 'neutral';
+    const shClass = a.rolling_sharpe >= 1.0 ? 'good' : a.rolling_sharpe >= 0 ? 'neutral' : a.rolling_sharpe != null ? 'bad' : 'neutral';
+    const cooldownHtml = inCooldown ? ' <span class="cooldown-badge">Cooldown</span>' : '';
+
     card.innerHTML = `
       <div class="card-header">
         <span class="color-dot" style="background:${s.color};box-shadow:0 0 6px ${s.color}40"></span>
         <span class="strategy-name">${esc(s.name)}</span>
         <span class="status-badge ${statusClass}">${statusText}</span>
+        ${cooldownHtml}
       </div>
 
       <div class="card-description">${esc(s.description_nl)}</div>
+
+      <div class="adaptive-row">
+        <div class="adaptive-metric">
+          <span class="metric-label">Win Rate</span>
+          <span class="metric-value ${wrClass}">${winRate}%</span>
+        </div>
+        <div class="adaptive-metric">
+          <span class="metric-label">Sharpe</span>
+          <span class="metric-value ${shClass}">${sharpe}</span>
+        </div>
+        <div class="adaptive-metric">
+          <span class="metric-label">Trades</span>
+          <span class="metric-value neutral">${trades}</span>
+        </div>
+      </div>
 
       <div class="card-row">
         <span class="card-label">Rendement</span>

@@ -12,6 +12,7 @@ venv/
 trades.json
 dashboard.png
 bot_performance.json
+strategy_state.json
 
 # OS
 .DS_Store

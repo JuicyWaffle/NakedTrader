@@ -70,6 +70,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(200, {"bots": data["bots"]})
         elif self.path == "/api/strategies":
             self._serve_strategies()
+        elif self.path == "/api/adaptive":
+            self._serve_adaptive()
         elif self.path.startswith("/public/"):
             self._serve_file(PUBLIC_DIR / self.path[len("/public/"):])
         else:
@@ -158,6 +160,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "active": m.active,
                 })
             self._json(200, {"strategies": result})
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _serve_adaptive(self):
+        """Geef adaptive metrics terug voor alle strategieen."""
+        try:
+            from adaptive import AdaptiveEngine
+            import yaml
+            # Laad state_path uit config
+            cfg_file = PROJECT_DIR / "config.yml"
+            state_path = "strategy_state.json"
+            if cfg_file.is_file():
+                with open(cfg_file) as f:
+                    yml = yaml.safe_load(f) or {}
+                    state_path = yml.get("state_path", state_path)
+            engine = AdaptiveEngine(str(PROJECT_DIR / state_path))
+            states = engine.get_all_states()
+            self._json(200, {"adaptive": states})
         except Exception as e:
             self._json(500, {"error": str(e)})
 

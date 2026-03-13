@@ -64,8 +64,22 @@ class TradingBot:
         )
         self.risk_mgr = RiskManager(risk_limits, config.total_capital)
 
-        # Performance store (optioneel, wordt later geïntegreerd)
+        # Performance store (optioneel)
         self.store = None
+
+        # Macro risk engine
+        self.macro_risk = None
+        self._current_risk = None
+        self._last_risk_check: Optional[datetime] = None
+        if config.macro_risk_enabled:
+            try:
+                from nakedtrader.risk.macro import MacroRiskEngine
+                self.macro_risk = MacroRiskEngine(
+                    emergency_score=config.macro_risk_veto_threshold,
+                )
+                log.info("Macro risk engine actief (interval=%dm)", config.macro_risk_interval_min)
+            except Exception as e:
+                log.warning("Macro risk engine niet beschikbaar: %s", e)
 
         self.ibkr: Optional[IBKRBroker] = None
         self.kraken: Optional[KrakenBroker] = None
@@ -101,6 +115,11 @@ class TradingBot:
             log.warning(f"Max posities bereikt, {signal.symbol} overgeslagen")
             return
 
+        # 0. Macro risk veto
+        if self._current_risk and self._current_risk.emergency_brake:
+            log.warning(f"[MACRO] Noodrem actief (score={self._current_risk.risk_score:.2f}) — {signal.symbol} overgeslagen")
+            return
+
         # 1. Drawdown circuit-breaker
         if self.risk_mgr.halted:
             log.warning(f"[RISK] Circuit-breaker actief — {signal.symbol} overgeslagen")
@@ -119,6 +138,11 @@ class TradingBot:
                 win_prob = self.adaptive.get_rolling_win_rate(sid)
 
         kelly_frac = self.sizer.calculate(win_prob, signal.expected_win_pct, signal.expected_loss_pct)
+
+        # Macro risk Kelly-reductie
+        if self._current_risk:
+            kelly_frac *= self._current_risk.kelly_mult
+
         size_eur = self.config.total_capital * kelly_frac
 
         if size_eur < 10:
@@ -176,6 +200,28 @@ class TradingBot:
 
         self.open_positions.append(signal.symbol)
 
+    def _check_macro_risk(self):
+        """Periodieke macro risk hercheck."""
+        if not self.macro_risk:
+            return
+        now = datetime.now()
+        interval = self.config.macro_risk_interval_min * 60
+        if self._last_risk_check and (now - self._last_risk_check).total_seconds() < interval:
+            return
+        try:
+            self._current_risk = self.macro_risk.evaluate()
+            self._last_risk_check = now
+            log.info(
+                "[MACRO] score=%.2f level=%s kelly×%.2f sl×%.2f%s",
+                self._current_risk.risk_score,
+                self._current_risk.risk_level,
+                self._current_risk.kelly_mult,
+                self._current_risk.sl_mult,
+                " ⚠ NOODREM" if self._current_risk.emergency_brake else "",
+            )
+        except Exception as e:
+            log.warning("[MACRO] Evaluatie mislukt: %s", e)
+
     def _check_rollups(self):
         """Check of EOD/EOM rollup nodig is."""
         if not self.store:
@@ -210,6 +256,7 @@ class TradingBot:
 
         while True:
             try:
+                self._check_macro_risk()
                 signals = signals_fn() if signals_fn else None
                 self.run_once(signals)
                 self._check_rollups()

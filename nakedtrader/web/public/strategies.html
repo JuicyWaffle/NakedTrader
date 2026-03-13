@@ -329,6 +329,182 @@
     color: var(--text-dim);
   }
 
+  /* ── Macro Risk Panel ───────────────────── */
+  .macro-risk-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .risk-score-meter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-width: 80px;
+  }
+
+  .risk-score-circle {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+    border: 3px solid;
+  }
+
+  .risk-score-circle.green { color: #00ff88; border-color: #00ff88; background: rgba(0,255,136,0.08); }
+  .risk-score-circle.orange { color: #ffaa44; border-color: #ffaa44; background: rgba(255,170,68,0.08); }
+  .risk-score-circle.red { color: #ff4466; border-color: #ff4466; background: rgba(255,68,102,0.08); }
+
+  .risk-level-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 3px 10px;
+    border-radius: 4px;
+  }
+
+  .risk-level-badge.green { color: #00ff88; background: rgba(0,255,136,0.1); }
+  .risk-level-badge.orange { color: #ffaa44; background: rgba(255,170,68,0.1); }
+  .risk-level-badge.red { color: #ff4466; background: rgba(255,68,102,0.1); }
+
+  .risk-details {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .risk-details-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .risk-mults {
+    display: flex;
+    gap: 16px;
+  }
+
+  .risk-mult {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .risk-mult .mult-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+  }
+
+  .risk-mult .mult-value {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+
+  .risk-alerts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .risk-alert {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #ffaa44;
+    padding: 2px 0;
+  }
+
+  .risk-quality {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .quality-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 3px;
+    vertical-align: middle;
+  }
+
+  .quality-dot.ok { background: #00ff88; }
+  .quality-dot.degraded { background: #ffaa44; }
+  .quality-dot.fail { background: #ff4466; }
+
+  .quality-item {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text);
+  }
+
+  .risk-data-quality {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 140px;
+  }
+
+  .risk-data-quality .dq-title {
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+  }
+
+  /* ── Money Management rows in cards ──── */
+  .mm-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .mm-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mm-item .mm-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+  }
+
+  .mm-item .mm-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-bright);
+  }
+
   /* Adaptive metrics */
   .adaptive-row {
     display: flex;
@@ -392,32 +568,108 @@
 </header>
 
 <main>
-  <div class="section-label">Trading strategieen</div>
+  <div class="section-label">Macro Risico</div>
+  <div class="macro-risk-panel" id="macro-risk-panel">
+    <div class="loading">Risico laden...</div>
+  </div>
+
+  <div class="section-label" style="margin-top:24px">Trading strategieen</div>
   <div class="strategies-grid" id="strategies-grid">
     <div class="loading">Strategieen laden...</div>
   </div>
 </main>
 
 <script>
-async function loadStrategies() {
-  try {
-    const [stratRes, adaptRes] = await Promise.all([
-      fetch('/api/strategies'),
-      fetch('/api/adaptive').catch(() => ({ json: () => ({ adaptive: {} }) })),
-    ]);
-    const stratData = await stratRes.json();
-    let adaptData = {};
-    try { adaptData = (await adaptRes.json()).adaptive || {}; } catch(e) {}
-    renderStrategies(stratData.strategies, adaptData);
-  } catch (e) {
-    document.getElementById('strategies-grid').innerHTML =
-      '<div class="loading">Fout bij laden: ' + esc(e.message) + '</div>';
-  }
+async function loadAll() {
+  // Load all data in parallel
+  const [stratRes, adaptRes, mmRes, riskRes] = await Promise.all([
+    fetch('/api/strategies').catch(() => null),
+    fetch('/api/adaptive').catch(() => null),
+    fetch('/api/money-management').catch(() => null),
+    fetch('/api/macro-risk').catch(() => null),
+  ]);
+
+  // Parse results
+  let strategies = [];
+  let adaptive = {};
+  let mm = {};
+  let risk = null;
+
+  try { strategies = (await stratRes.json()).strategies || []; } catch(e) {}
+  try { adaptive = (await adaptRes.json()).adaptive || {}; } catch(e) {}
+  try { mm = await mmRes.json(); } catch(e) {}
+  try { risk = await riskRes.json(); } catch(e) {}
+
+  renderMacroRisk(risk);
+  renderStrategies(strategies, adaptive, mm);
 }
 
-function renderStrategies(strategies, adaptive) {
+function renderMacroRisk(risk) {
+  const panel = document.getElementById('macro-risk-panel');
+  if (!risk || risk.error) {
+    panel.innerHTML = '<div class="loading">Macro risk niet beschikbaar</div>';
+    return;
+  }
+
+  const level = risk.risk_level || 'green';
+  const score = (risk.risk_score || 0).toFixed(2);
+  const kellyMult = (risk.kelly_mult || 1.0).toFixed(2);
+  const slMult = (risk.sl_mult || 1.0).toFixed(2);
+
+  // Alerts
+  const alerts = (risk.alerts || []).map(a =>
+    '<div class="risk-alert">' + esc(a) + '</div>'
+  ).join('') || '<div class="risk-alert" style="color:var(--accent)">Geen actieve waarschuwingen</div>';
+
+  // Data quality
+  const dq = risk.data_quality || {};
+  const qualityItems = Object.entries(dq).map(([k, v]) => {
+    const dotClass = v === true || v === 'ok' ? 'ok' : v === 'degraded' ? 'degraded' : 'fail';
+    return '<span class="quality-item"><span class="quality-dot ' + dotClass + '"></span>' + esc(k) + '</span>';
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="risk-score-meter">
+      <div class="risk-score-circle ${level}">${score}</div>
+      <span class="risk-level-badge ${level}">${level.toUpperCase()}</span>
+    </div>
+    <div class="risk-details">
+      <div class="risk-details-title">Macro Risk Monitor</div>
+      <div class="risk-mults">
+        <div class="risk-mult">
+          <span class="mult-label">Kelly mult</span>
+          <span class="mult-value">&times;${kellyMult}</span>
+        </div>
+        <div class="risk-mult">
+          <span class="mult-label">SL mult</span>
+          <span class="mult-value">&times;${slMult}</span>
+        </div>
+        <div class="risk-mult">
+          <span class="mult-label">Noodrem</span>
+          <span class="mult-value" style="color:${risk.emergency_brake ? '#ff4466' : 'var(--accent)'}">${risk.emergency_brake ? 'ACTIEF' : 'Uit'}</span>
+        </div>
+      </div>
+      <div class="risk-alerts">${alerts}</div>
+    </div>
+    <div class="risk-data-quality">
+      <span class="dq-title">Databronnen</span>
+      <div class="risk-quality">${qualityItems || '<span class="quality-item">Geen data</span>'}</div>
+    </div>
+  `;
+}
+
+async function loadStrategies() {
+  // Legacy fallback — loadAll() is preferred
+  loadAll();
+}
+
+function renderStrategies(strategies, adaptive, mm) {
   const grid = document.getElementById('strategies-grid');
   grid.innerHTML = '';
+
+  const kellyFrac = mm.kelly_fraction || 0.5;
+  const maxPosPct = mm.max_position_pct || 0.20;
+  const mmStrats = mm.strategies || {};
 
   strategies.forEach(s => {
     const card = document.createElement('div');
@@ -460,6 +712,12 @@ function renderStrategies(strategies, adaptive) {
     const shClass = a.rolling_sharpe >= 1.0 ? 'good' : a.rolling_sharpe >= 0 ? 'neutral' : a.rolling_sharpe != null ? 'bad' : 'neutral';
     const cooldownHtml = inCooldown ? ' <span class="cooldown-badge">Cooldown</span>' : '';
 
+    // Money management per strategie
+    const smm = mmStrats[s.id] || {};
+    const budgetPct = ((smm.risk_budget_pct || 0) * 100).toFixed(0);
+    const slPct = ((smm.stop_loss_pct || 0.05) * 100).toFixed(1);
+    const tpPct = ((smm.take_profit_pct || 0.10) * 100).toFixed(1);
+
     card.innerHTML = `
       <div class="card-header">
         <span class="color-dot" style="background:${s.color};box-shadow:0 0 6px ${s.color}40"></span>
@@ -482,6 +740,21 @@ function renderStrategies(strategies, adaptive) {
         <div class="adaptive-metric">
           <span class="metric-label">Trades</span>
           <span class="metric-value neutral">${trades}</span>
+        </div>
+      </div>
+
+      <div class="mm-row">
+        <div class="mm-item">
+          <span class="mm-label">Risk Budget</span>
+          <span class="mm-value">${budgetPct}%</span>
+        </div>
+        <div class="mm-item">
+          <span class="mm-label">Stop-Loss</span>
+          <span class="mm-value">${slPct}%</span>
+        </div>
+        <div class="mm-item">
+          <span class="mm-label">Take-Profit</span>
+          <span class="mm-value">${tpPct}%</span>
         </div>
       </div>
 
@@ -517,6 +790,10 @@ function renderStrategies(strategies, adaptive) {
           <span class="meta-label">Broker</span>
           <span class="meta-value">${esc(s.broker.toUpperCase())}</span>
         </div>
+        <div class="meta-item">
+          <span class="meta-label">Kelly</span>
+          <span class="meta-value">${(kellyFrac * 100).toFixed(0)}% (max ${(maxPosPct * 100).toFixed(0)}%)</span>
+        </div>
       </div>
     `;
     grid.appendChild(card);
@@ -527,7 +804,7 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-loadStrategies();
+loadAll();
 </script>
 </body>
 </html>

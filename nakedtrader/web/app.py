@@ -92,6 +92,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/adaptive":
             self._serve_adaptive()
 
+        elif path == "/api/macro-risk":
+            self._serve_macro_risk()
+
+        elif path == "/api/money-management":
+            self._serve_money_management()
+
         elif path.startswith("/public/"):
             self._serve_file(PUBLIC_DIR / path[len("/public/"):])
         else:
@@ -130,6 +136,37 @@ class DashboardHandler(BaseHTTPRequestHandler):
             engine = AdaptiveEngine(state_path)
             states = engine.get_all_states()
             self._json(200, {"adaptive": states})
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _serve_macro_risk(self):
+        try:
+            from nakedtrader.risk.macro import MacroRiskEngine
+            threshold = _config.macro_risk_veto_threshold if _config else 0.85
+            engine = MacroRiskEngine(emergency_score=threshold)
+            report = engine.evaluate()
+            self._json(200, report.to_dict())
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _serve_money_management(self):
+        try:
+            from nakedtrader.money.risk import RiskManager, RiskLimits, DEFAULT_RISK_BUDGETS, DEFAULT_SL_TP_OVERRIDES
+            result = {
+                "kelly_fraction": _config.kelly_fraction if _config else 0.5,
+                "max_position_pct": _config.max_position_pct if _config else 0.20,
+                "drawdown_limit_pct": _config.drawdown_limit_pct if _config else 0.15,
+                "strategies": {},
+            }
+            for sid in DEFAULT_RISK_BUDGETS:
+                budget = DEFAULT_RISK_BUDGETS[sid]
+                sl_tp = DEFAULT_SL_TP_OVERRIDES.get(sid, {})
+                result["strategies"][sid] = {
+                    "risk_budget_pct": budget,
+                    "stop_loss_pct": sl_tp.get("sl", _config.stop_loss_pct if _config else 0.05),
+                    "take_profit_pct": sl_tp.get("tp", _config.take_profit_pct if _config else 0.10),
+                }
+            self._json(200, result)
         except Exception as e:
             self._json(500, {"error": str(e)})
 

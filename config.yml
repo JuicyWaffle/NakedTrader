@@ -34,5 +34,10 @@ crypto_broker: kraken          # "kraken" of "binance"
 # ── Binance ───────────────────────────────────
 binance_testnet: true          # true zolang je aan het testen bent
 
+# ── Macro Risk ───────────────────────────────
+macro_risk_enabled: true       # geopolitieke risicobewaking
+macro_risk_interval_min: 60    # hercheck elke 60 minuten
+macro_risk_veto_threshold: 0.85 # noodrem bij score >= 0.85
+
 # ── Loop ──────────────────────────────────────
 interval_seconds: 60           # seconden tussen polling rondes

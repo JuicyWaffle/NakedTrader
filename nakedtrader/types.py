@@ -104,6 +104,24 @@ class MonthlySummary:
 
 
 # ─────────────────────────────────────────────
+# MACRO RISK REPORT
+# ─────────────────────────────────────────────
+
+@dataclass
+class RiskReport:
+    """Gestandaardiseerde output van MacroRiskEngine.evaluate()."""
+    risk_score: float              # 0.0 (laag) → 1.0 (kritiek)
+    risk_level: str                # "green" | "orange" | "red"
+    kelly_mult: float              # vermenigvuldiger voor Kelly-fractie
+    sl_mult: float                 # stop-loss aanscherping (< 1.0 = strikter)
+    emergency_brake: bool          # True = halt alle posities
+    signals: dict                  # ruwe indicatorwaarden
+    alerts: list[str]              # mensleesbare waarschuwingen
+    data_quality: dict             # beschikbaarheid per databron
+    timestamp: str = ""
+
+
+# ─────────────────────────────────────────────
 # STRATEGY META
 # ─────────────────────────────────────────────
 

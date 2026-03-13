@@ -54,6 +54,11 @@ class Config:
     binance_api_secret: str = ""
     binance_testnet: bool = True
 
+    # ── Macro Risk ────────────────────────────
+    macro_risk_enabled: bool = True
+    macro_risk_interval_min: int = 60
+    macro_risk_veto_threshold: float = 0.85
+
     # ── Loop ───────────────────────────────────
     interval_seconds: int = 60
 
@@ -98,6 +103,9 @@ def load_config(config_path="config.yml", env_path=".env", project_dir=None) -> 
         binance_api_key=os.environ.get("BINANCE_API_KEY", ""),
         binance_api_secret=os.environ.get("BINANCE_API_SECRET", ""),
         binance_testnet=yml.get("binance_testnet", True),
+        macro_risk_enabled=yml.get("macro_risk_enabled", True),
+        macro_risk_interval_min=yml.get("macro_risk_interval_min", 60),
+        macro_risk_veto_threshold=yml.get("macro_risk_veto_threshold", 0.85),
         interval_seconds=yml.get("interval_seconds", 60),
     )
 

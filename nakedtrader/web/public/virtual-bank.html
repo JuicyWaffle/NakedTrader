@@ -199,6 +199,47 @@
   .tx-table .tx-dim { color: var(--text-dim); }
 
   .health-card { min-height: 180px; }
+
+  /* Portfolio cards */
+  .portfolio-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .portfolio-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .portfolio-card .pc-header {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .portfolio-card .pc-name {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .portfolio-card .pc-total {
+    font-family: var(--mono); font-size: 20px; font-weight: 700;
+  }
+  .portfolio-card .pc-row {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px;
+  }
+  .portfolio-card .pc-label { color: var(--text-dim); }
+  .portfolio-card .pc-val { font-weight: 600; }
+  .portfolio-card .pc-positions {
+    border-top: 1px solid var(--border); padding-top: 6px; margin-top: 2px;
+  }
+  .portfolio-card .pc-pos {
+    font-family: var(--mono); font-size: 9px; color: var(--text);
+    display: flex; justify-content: space-between; padding: 2px 0;
+  }
+  .portfolio-card .pc-pos .pos-sym { color: var(--text-bright); font-weight: 600; }
+
+  .reset-btn {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 4px 10px; border-radius: 4px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--text-dim);
+    background: transparent; transition: all 0.2s;
+  }
+  .reset-btn:hover { color: var(--red); border-color: var(--red); background: rgba(255,68,102,0.08); }
 </style>
 </head>
 <body>
@@ -222,10 +263,10 @@
 
 <main>
 
-  <!-- Bot stats -->
+  <!-- Portfolio overview -->
   <div>
-    <div class="section-label">Huidige performance per bot</div>
-    <div class="stats-row" id="stats-row"></div>
+    <div class="section-label">Portfolio overzicht</div>
+    <div class="portfolio-row" id="portfolio-row"></div>
   </div>
 
   <!-- Main chart with timeframe tabs -->
@@ -339,11 +380,12 @@ async function loadChart(tab) {
 
 async function loadDashboard() {
   try {
-    const [dailyRes, monthlyRes, adaptRes, txRes] = await Promise.all([
+    const [dailyRes, monthlyRes, adaptRes, txRes, portfolioRes] = await Promise.all([
       fetch('/api/charts/daily?days=90'),
       fetch('/api/charts/monthly?months=36'),
       fetch('/api/adaptive').catch(() => ({ ok: false })),
       fetch('/api/virtual-bank/transactions?limit=20').catch(() => ({ ok: false })),
+      fetch('/api/virtual-bank/portfolio').catch(() => ({ ok: false })),
     ]);
 
     const dailyData = await dailyRes.json();
@@ -352,8 +394,10 @@ async function loadDashboard() {
     try { if (adaptRes.ok) adaptive = (await adaptRes.json()).adaptive || {}; } catch(e) {}
     let transactions = [];
     try { if (txRes.ok) transactions = (await txRes.json()).transactions || []; } catch(e) {}
+    let portfolio = {};
+    try { if (portfolioRes.ok) portfolio = (await portfolioRes.json()).portfolio || {}; } catch(e) {}
 
-    renderStats(monthlyData);
+    renderPortfolio(portfolio);
     renderDrawdown(dailyData);
     renderHealth(adaptive, transactions);
     loadChart(currentTab);
@@ -365,35 +409,76 @@ async function loadDashboard() {
   }
 }
 
-/* ── Stats row ── */
-function renderStats(monthlyData) {
-  const container = document.getElementById('stats-row');
+/* ── Portfolio overview ── */
+function renderPortfolio(portfolio) {
+  const container = document.getElementById('portfolio-row');
   container.innerHTML = '';
 
-  const strategies = monthlyData.strategies || {};
-  const startBal = monthlyData.starting_balance || 2000;
-
   Object.keys(BOT_NAMES).forEach(sid => {
-    const data = strategies[sid] || [];
-    // Bereken huidig saldo: startbalans + som van alle pnl_eur
-    let cumPnl = 0;
-    data.forEach(m => { cumPnl += m.pnl_eur || 0; });
-    const balance = startBal + cumPnl;
-    const lastPnl = data.length > 0 ? data[data.length - 1].pnl_eur || 0 : 0;
-    const cls = balance >= startBal ? 'positive' : 'negative';
+    const p = portfolio[sid] || { cash: 100000, positions: [], total_value: 100000, starting_capital: 100000, pnl_total_eur: 0, pnl_total_pct: 0 };
+    const pnlClass = p.pnl_total_eur >= 0 ? 'positive' : 'negative';
+    const pnlSign = p.pnl_total_eur >= 0 ? '+' : '';
+
+    let posHtml = '';
+    if (p.positions && p.positions.length > 0) {
+      posHtml = '<div class="pc-positions">';
+      p.positions.forEach(pos => {
+        const posPnlClass = pos.pnl_eur >= 0 ? 'positive' : 'negative';
+        const posSign = pos.pnl_eur >= 0 ? '+' : '';
+        posHtml += `
+          <div class="pc-pos">
+            <span class="pos-sym">${esc(pos.symbol)}</span>
+            <span>qty: ${pos.quantity < 1 ? pos.quantity.toFixed(6) : pos.quantity.toFixed(2)}</span>
+            <span class="${posPnlClass}">${posSign}&euro;${pos.pnl_eur.toFixed(0)}</span>
+          </div>`;
+      });
+      posHtml += '</div>';
+    } else {
+      posHtml = '<div style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-top:4px">Geen open posities</div>';
+    }
 
     const card = document.createElement('div');
-    card.className = 'stat-card';
+    card.className = 'portfolio-card';
     card.innerHTML = `
-      <div class="bot-name">
-        <span class="color-dot" style="background:${BOT_COLORS[sid]}"></span>
-        ${esc(BOT_NAMES[sid])}
+      <div class="pc-header">
+        <div class="pc-name">
+          <span class="color-dot" style="background:${BOT_COLORS[sid]};width:8px;height:8px;border-radius:50%;display:inline-block"></span>
+          ${esc(BOT_NAMES[sid])}
+        </div>
+        <button class="reset-btn" onclick="resetBot('${sid}')">Reset</button>
       </div>
-      <div class="value ${cls}">&euro;${balance.toFixed(0)}</div>
-      <div class="sub">Laatste maand: ${lastPnl >= 0 ? '+' : ''}&euro;${lastPnl.toFixed(0)}</div>
+      <div class="pc-total ${pnlClass}">&euro;${p.total_value.toLocaleString('nl-NL', {minimumFractionDigits:0, maximumFractionDigits:0})}</div>
+      <div class="pc-row">
+        <span class="pc-label">Cash</span>
+        <span class="pc-val">&euro;${p.cash.toLocaleString('nl-NL', {minimumFractionDigits:0, maximumFractionDigits:0})}</span>
+      </div>
+      <div class="pc-row">
+        <span class="pc-label">Posities</span>
+        <span class="pc-val">${p.positions ? p.positions.length : 0} open</span>
+      </div>
+      <div class="pc-row">
+        <span class="pc-label">PnL</span>
+        <span class="pc-val ${pnlClass}">${pnlSign}&euro;${p.pnl_total_eur.toLocaleString('nl-NL', {minimumFractionDigits:0, maximumFractionDigits:0})} (${pnlSign}${p.pnl_total_pct.toFixed(1)}%)</span>
+      </div>
+      ${posHtml}
     `;
     container.appendChild(card);
   });
+}
+
+async function resetBot(strategyId) {
+  if (!confirm('Reset ' + (BOT_NAMES[strategyId] || strategyId) + ' naar €100.000? Alle posities worden gesloten.')) return;
+  try {
+    const res = await fetch('/api/virtual-bank/reset?strategy=' + strategyId, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      loadDashboard();
+    } else {
+      alert('Reset mislukt: ' + (data.error || 'onbekende fout'));
+    }
+  } catch (e) {
+    alert('Reset mislukt: ' + e.message);
+  }
 }
 
 /* ── Intraday chart ── */

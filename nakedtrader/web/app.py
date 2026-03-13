@@ -105,6 +105,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             txs = _store.get_recent_transactions(strategy_id=strategy, limit=limit)
             self._json(200, {"transactions": txs})
 
+        elif path == "/api/virtual-bank/portfolio":
+            self._serve_portfolio()
+
         elif path.startswith("/public/"):
             self._serve_file(PUBLIC_DIR / path[len("/public/"):])
         else:
@@ -153,6 +156,52 @@ class DashboardHandler(BaseHTTPRequestHandler):
             engine = MacroRiskEngine(emergency_score=threshold)
             report = engine.evaluate()
             self._json(200, report.to_dict())
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = parse_qs(parsed.query)
+
+        if path == "/api/virtual-bank/reset":
+            strategy = params.get("strategy", [None])[0]
+            if not strategy:
+                self._json(400, {"error": "missing strategy parameter"})
+                return
+            self._do_reset(strategy)
+        else:
+            self._json(404, {"error": "not found"})
+
+    def _do_reset(self, strategy_id: str):
+        """Reset een bot naar startkapitaal via state file."""
+        try:
+            from nakedtrader.virtual_bank import STARTING_CAPITAL
+            state_path = Path(str(PROJECT_ROOT / _config.data_dir)) / "virtual_bank_state.json"
+            if state_path.exists():
+                with open(state_path) as f:
+                    state = json.load(f)
+            else:
+                state = {}
+
+            state[strategy_id] = {"cash": STARTING_CAPITAL, "positions": {}}
+
+            tmp = state_path.with_suffix(".tmp")
+            with open(tmp, "w") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+            tmp.replace(state_path)
+
+            self._json(200, {"status": "ok", "strategy": strategy_id, "cash": STARTING_CAPITAL})
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _serve_portfolio(self):
+        """Retourneer portfolio overzicht uit virtual_bank_state.json."""
+        try:
+            from nakedtrader.virtual_bank import get_portfolio_from_state
+            data_dir = str(PROJECT_ROOT / _config.data_dir)
+            portfolio = get_portfolio_from_state(data_dir)
+            self._json(200, {"portfolio": portfolio})
         except Exception as e:
             self._json(500, {"error": str(e)})
 

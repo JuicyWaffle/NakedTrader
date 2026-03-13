@@ -116,6 +116,26 @@
     background: rgba(0,255,136,0.05);
   }
 
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+
   main {
     position: relative;
     z-index: 1;
@@ -566,6 +586,10 @@
     <a href="/virtual-bank">Virtual Bank</a>
     <a href="/strategies" class="active">Strategieen</a>
   </nav>
+  <div class="status-bar">
+    <div class="status-dot"></div>
+    <span id="last-update">laden...</span>
+  </div>
 </header>
 
 <main>
@@ -603,6 +627,9 @@ async function loadAll() {
 
   renderMacroRisk(risk);
   renderStrategies(strategies, adaptive, mm);
+
+  document.getElementById('last-update').textContent =
+    'update: ' + new Date().toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'});
 }
 
 function renderMacroRisk(risk) {

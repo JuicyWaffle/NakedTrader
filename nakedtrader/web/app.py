@@ -60,6 +60,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # ── HTML pages ────────────────────────────────
         if path == "/":
             self._serve_file(PUBLIC_DIR / "index.html", "text/html")
+        elif path == "/virtual-bank":
+            self._serve_file(PUBLIC_DIR / "virtual-bank.html", "text/html")
         elif path == "/strategies":
             self._serve_file(PUBLIC_DIR / "strategies.html", "text/html")
 

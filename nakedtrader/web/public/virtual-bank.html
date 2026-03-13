@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NakedTrader Dashboard</title>
+<title>NakedTrader — Virtual Bank</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@300;400;600&display=swap');
@@ -172,11 +172,11 @@
   <a href="/" class="logo">NT</a>
   <div>
     <h1>NakedTrader</h1>
-    <p>Bot Performance Dashboard</p>
+    <p>Virtual Bank</p>
   </div>
   <nav>
-    <a href="/" class="active">Dashboard</a>
-    <a href="/virtual-bank">Virtual Bank</a>
+    <a href="/">Dashboard</a>
+    <a href="/virtual-bank" class="active">Virtual Bank</a>
     <a href="/strategies">Strategieen</a>
   </nav>
   <div class="status-bar">
@@ -199,8 +199,8 @@
     <div class="chart-card">
       <div class="chart-header">
         <div>
-          <div class="chart-title" id="chart-title">Cumulatief rendement (%)</div>
-          <div class="chart-subtitle" id="chart-subtitle">Dagelijkse performance — laatste 90 dagen</div>
+          <div class="chart-title" id="chart-title">Virtueel saldo per bot</div>
+          <div class="chart-subtitle" id="chart-subtitle">Dagelijks saldo — laatste 90 dagen</div>
         </div>
         <div class="tf-tabs">
           <button class="tf-tab" data-tf="intraday" onclick="switchTab('intraday')">Intraday</button>
@@ -272,8 +272,8 @@ function switchTab(tab) {
 
   const titles = {
     intraday: ['Trades vandaag', 'Per-trade PnL — vandaag'],
-    daily: ['Cumulatief rendement (%)', 'Dagelijkse performance — laatste 90 dagen'],
-    monthly: ['Cumulatief rendement (%)', 'Maandelijkse performance — laatste 36 maanden'],
+    daily: ['Virtueel saldo per bot', 'Dagelijks saldo — laatste 90 dagen'],
+    monthly: ['Virtueel saldo per bot', 'Maandelijks saldo — laatste 36 maanden'],
   };
   document.getElementById('chart-title').textContent = titles[tab][0];
   document.getElementById('chart-subtitle').textContent = titles[tab][1];
@@ -333,14 +333,16 @@ function renderStats(monthlyData) {
   container.innerHTML = '';
 
   const strategies = monthlyData.strategies || {};
+  const startBal = monthlyData.starting_balance || 2000;
 
   Object.keys(BOT_NAMES).forEach(sid => {
     const data = strategies[sid] || [];
-    const last = data.length > 0 ? data[data.length - 1] : null;
-    const cumPct = last ? last.cumulative_pct : 0;
-    const monthPnl = last ? last.pnl_pct : 0;
-    const sign = cumPct >= 0 ? '+' : '';
-    const cls = cumPct >= 0 ? 'positive' : 'negative';
+    // Bereken huidig saldo: startbalans + som van alle pnl_eur
+    let cumPnl = 0;
+    data.forEach(m => { cumPnl += m.pnl_eur || 0; });
+    const balance = startBal + cumPnl;
+    const lastPnl = data.length > 0 ? data[data.length - 1].pnl_eur || 0 : 0;
+    const cls = balance >= startBal ? 'positive' : 'negative';
 
     const card = document.createElement('div');
     card.className = 'stat-card';
@@ -349,8 +351,8 @@ function renderStats(monthlyData) {
         <span class="color-dot" style="background:${BOT_COLORS[sid]}"></span>
         ${esc(BOT_NAMES[sid])}
       </div>
-      <div class="value ${cls}">${sign}${cumPct.toFixed(1)}%</div>
-      <div class="sub">Laatste maand: ${monthPnl >= 0 ? '+' : ''}${monthPnl.toFixed(1)}%</div>
+      <div class="value ${cls}">&euro;${balance.toFixed(0)}</div>
+      <div class="sub">Laatste maand: ${lastPnl >= 0 ? '+' : ''}&euro;${lastPnl.toFixed(0)}</div>
     `;
     container.appendChild(card);
   });
@@ -433,6 +435,7 @@ function renderIntradayChart(data) {
 function renderDailyChart(data) {
   const ctx = document.getElementById('mainChart').getContext('2d');
   const strategies = data.strategies || {};
+  const startBal = data.starting_balance || 2000;
 
   // Verzamel alle unieke datums
   const allDates = new Set();
@@ -440,11 +443,17 @@ function renderDailyChart(data) {
   const labels = [...allDates].sort();
 
   const datasets = Object.keys(BOT_NAMES).filter(sid => strategies[sid]).map(sid => {
-    const dayMap = {};
-    (strategies[sid] || []).forEach(d => { dayMap[d.date] = d.cumulative_pct; });
+    // Bouw lopend saldo op uit dagelijkse pnl_eur
+    const days = (strategies[sid] || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+    const balanceMap = {};
+    let cumPnl = 0;
+    days.forEach(d => {
+      cumPnl += d.pnl_eur || 0;
+      balanceMap[d.date] = startBal + cumPnl;
+    });
     return {
       label: BOT_NAMES[sid],
-      data: labels.map(date => dayMap[date] ?? null),
+      data: labels.map(date => balanceMap[date] ?? null),
       borderColor: BOT_COLORS[sid],
       backgroundColor: BOT_COLORS[sid] + '15',
       borderWidth: 2,
@@ -469,7 +478,7 @@ function renderDailyChart(data) {
           callbacks: {
             label: ctx => {
               const v = ctx.parsed.y;
-              return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+              return ` ${ctx.dataset.label}: €${v.toFixed(0)}`;
             },
           },
         },
@@ -481,7 +490,7 @@ function renderDailyChart(data) {
         },
         y: {
           ticks: { color: '#55556a', font: monoFont(10),
-            callback: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%',
+            callback: v => '€' + v.toFixed(0),
           },
           grid: { color: 'rgba(30,30,46,0.5)' },
         },
@@ -494,17 +503,23 @@ function renderDailyChart(data) {
 function renderMonthlyChart(data) {
   const ctx = document.getElementById('mainChart').getContext('2d');
   const strategies = data.strategies || {};
+  const startBal = data.starting_balance || 2000;
 
   const allMonths = new Set();
   Object.values(strategies).forEach(months => months.forEach(m => allMonths.add(m.month)));
   const labels = [...allMonths].sort();
 
   const datasets = Object.keys(BOT_NAMES).filter(sid => strategies[sid]).map(sid => {
-    const monthMap = {};
-    (strategies[sid] || []).forEach(m => { monthMap[m.month] = m.cumulative_pct; });
+    const months = (strategies[sid] || []).slice().sort((a, b) => a.month.localeCompare(b.month));
+    const balanceMap = {};
+    let cumPnl = 0;
+    months.forEach(m => {
+      cumPnl += m.pnl_eur || 0;
+      balanceMap[m.month] = startBal + cumPnl;
+    });
     return {
       label: BOT_NAMES[sid],
-      data: labels.map(month => monthMap[month] ?? null),
+      data: labels.map(month => balanceMap[month] ?? null),
       borderColor: BOT_COLORS[sid],
       backgroundColor: BOT_COLORS[sid] + '15',
       borderWidth: 2,
@@ -530,7 +545,7 @@ function renderMonthlyChart(data) {
           callbacks: {
             label: ctx => {
               const v = ctx.parsed.y;
-              return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+              return ` ${ctx.dataset.label}: €${v.toFixed(0)}`;
             },
           },
         },
@@ -542,7 +557,7 @@ function renderMonthlyChart(data) {
         },
         y: {
           ticks: { color: '#55556a', font: monoFont(10),
-            callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%',
+            callback: v => '€' + v.toFixed(0),
           },
           grid: { color: 'rgba(30,30,46,0.5)' },
         },

@@ -278,7 +278,12 @@ class PerformanceStore:
 
             current += timedelta(days=1)
 
-        return {"days": days, "strategies": dict(strategies)}
+        n_strats = len(STRATEGY_PROFILES)
+        return {
+            "days": days,
+            "starting_balance": round(self.starting_capital / n_strats, 2),
+            "strategies": dict(strategies),
+        }
 
     def get_monthly(self, months: int = 36, strategy_id: str = None) -> dict:
         """Retourneer maandelijkse samenvattingen voor de laatste N maanden."""
@@ -306,7 +311,12 @@ class PerformanceStore:
                     "win_rate": info["win_rate"],
                 })
 
-        return {"months": months, "strategies": dict(strategies)}
+        n_strats = len(STRATEGY_PROFILES)
+        return {
+            "months": months,
+            "starting_balance": round(self.starting_capital / n_strats, 2),
+            "strategies": dict(strategies),
+        }
 
     def get_performance_json(self) -> dict:
         """Legacy backward compat: overzicht performance data."""

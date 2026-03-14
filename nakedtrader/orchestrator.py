@@ -42,11 +42,14 @@ log = logging.getLogger(__name__)
 
 # ── Signaalverval limieten (seconden) ─────────────────
 MAX_SIGNAL_AGE = {
-    "arbitrage": 2,
+    "arbitrage": 30,
     "momentum": 4 * 3600,
     "mean-reversion": 2 * 3600,
     "breakout": 8 * 3600,
     "trend-follow": 8 * 3600,
+    "funding-contrarian": 4 * 3600,
+    "cross-arb": 30,
+    "vol-regime": 8 * 3600,
 }
 
 # ── Slippage drempels per strategie ───────────────────
@@ -56,6 +59,9 @@ MAX_SLIPPAGE = {
     "breakout": 0.003,
     "arbitrage": 0.001,
     "trend-follow": 0.005,
+    "funding-contrarian": 0.003,
+    "cross-arb": 0.001,
+    "vol-regime": 0.005,
 }
 
 # ── Broker minimale ordergrootte (EUR) ────────────────
@@ -67,7 +73,8 @@ BROKER_MIN_SIZE = {
 
 # ── Prioriteit bij kapitaalschaarste ──────────────────
 STRATEGY_PRIORITY = [
-    "trend-follow", "mean-reversion", "momentum", "breakout", "arbitrage",
+    "trend-follow", "mean-reversion", "momentum", "vol-regime",
+    "funding-contrarian", "breakout", "arbitrage", "cross-arb",
 ]
 
 # ── Sector tagging voor correlatie ────────────────────
@@ -108,7 +115,7 @@ class BaseOrchestrator:
     # ── Configureerbare drempels (subklassen overschrijven) ──
     orchestrator_id: str = "A"
     exposure_limit_pct: float = 0.50
-    win_prob_threshold: float = 0.65
+    win_prob_threshold: float = 0.55
     win_prob_orange_add: float = 0.05
     kelly_correction: float = 0.8
     force_paper: bool = False         # True = altijd paper (B en C)
@@ -447,11 +454,6 @@ class BaseOrchestrator:
                 return self._make_report(
                     signal, "blocked",
                     f"Orange: win_prob {signal.win_probability:.2f} < drempel {threshold:.2f}", "R2",
-                )
-            # Scalper gepauzeerd bij orange
-            if sid == "arbitrage":
-                return self._make_report(
-                    signal, "blocked", "Scalper gepauzeerd bij orange risk", "R2",
                 )
 
         # R1: Green — win_prob check

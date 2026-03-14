@@ -32,20 +32,26 @@ class RiskLimits:
 # ─────────────────────────────────────────────
 
 DEFAULT_RISK_BUDGETS = {
-    "momentum":       0.20,   # 20%
-    "mean-reversion": 0.20,   # 20%
-    "breakout":       0.25,   # 25%
-    "arbitrage":      0.15,   # 15%
-    "trend-follow":   0.20,   # 20%
+    "momentum":           0.18,   # 18% — past kelly_correction * max_position_pct (16%)
+    "mean-reversion":     0.18,   # 18%
+    "breakout":           0.18,   # 18%
+    "arbitrage":          0.12,   # 12%
+    "trend-follow":       0.18,   # 18%
+    "funding-contrarian": 0.10,   # 10%
+    "cross-arb":          0.10,   # 10%
+    "vol-regime":         0.10,   # 10%
 }
 
 # Per-strategie SL/TP overrides (None = gebruik default)
 DEFAULT_SL_TP_OVERRIDES = {
-    "momentum":       {"sl": 0.05, "tp": 0.10},
-    "mean-reversion": {"sl": 0.03, "tp": 0.08},
-    "breakout":       {"sl": 0.07, "tp": 0.15},
-    "arbitrage":      {"sl": 0.02, "tp": 0.05},
-    "trend-follow":   {"sl": 0.05, "tp": 0.12},
+    "momentum":           {"sl": 0.05, "tp": 0.10},
+    "mean-reversion":     {"sl": 0.03, "tp": 0.08},
+    "breakout":           {"sl": 0.07, "tp": 0.15},
+    "arbitrage":          {"sl": 0.02, "tp": 0.05},
+    "trend-follow":       {"sl": 0.05, "tp": 0.12},
+    "funding-contrarian": {"sl": 0.04, "tp": 0.08},
+    "cross-arb":          {"sl": 0.002, "tp": 0.003},
+    "vol-regime":         {"sl": 0.06, "tp": 0.12},
 }
 
 

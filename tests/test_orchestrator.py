@@ -37,7 +37,7 @@ def _make_signal(**overrides) -> TradeSignal:
         direction="long",
         win_probability=0.70,
         expected_win_pct=0.12,
-        expected_loss_pct=0.05,
+        expected_loss_pct=0.08,
         current_price=62000.0,
         strategy_id="momentum",
     )
@@ -177,19 +177,20 @@ class TestRiskRules:
         # trend-follow is in allow_at_orange for OrchestratorA
         assert report.decision == "executed"
 
-    def test_r2_scalper_paused_at_orange(self, orch):
-        """Arbitrage/scalper is always blocked at orange risk."""
+    def test_r2_scalper_passes_at_orange_with_high_winprob(self, orch):
+        """Arbitrage/scalper can pass at orange if win_prob is high enough."""
         orch._current_risk = RiskReport(
             risk_score=0.55, risk_level="orange",
             kelly_mult=0.7, sl_mult=0.8,
             emergency_brake=False,
             signals={}, alerts=[], data_quality={},
         )
+        # Scalper-realistic parameters: small win/loss pcts → smaller Kelly size
         report = orch.process_signal(_make_signal(
             win_probability=0.90, strategy_id="arbitrage",
+            expected_win_pct=0.005, expected_loss_pct=0.0015,
         ))
-        assert report.decision == "blocked"
-        assert report.rule_triggered == "R2"
+        assert report.decision == "executed"
 
     def test_r3_red_blocks_all(self, orch):
         """Red risk blocks all strategies (OrchestratorA has no allow_at_red)."""

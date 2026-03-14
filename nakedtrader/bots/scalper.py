@@ -10,7 +10,7 @@ import logging
 from nakedtrader.types import TradeSignal, StrategyMeta
 from nakedtrader.indicators import order_book_imbalance
 from .base import BaseStrategy
-from .data_feeds import _kraken_orderbook
+from .data_feeds import _kraken_orderbook, _binance_funding_rate
 
 log = logging.getLogger(__name__)
 
@@ -72,16 +72,30 @@ class ArbitrageStrategy(BaseStrategy):
                     direction = "long" if imb > 0 else "short"
                     win_rate = self._get_rolling_win_rate()
 
+                    # Funding rate bevestiging: hoge funding + short-imbalance = sterker signaal
+                    funding_boost = 0.0
+                    try:
+                        symbol_map = {"XXBTZEUR": "BTCUSDT", "XETHZEUR": "ETHUSDT"}
+                        bn_sym = symbol_map.get(pair)
+                        if bn_sym:
+                            fr = _binance_funding_rate(bn_sym)
+                            rate = fr.get("funding_rate", 0)
+                            # Funding rate bevestigt richting: positief = long-heavy, negatief = short-heavy
+                            if (direction == "short" and rate > 0.0003) or (direction == "long" and rate < -0.0003):
+                                funding_boost = 0.03  # bonus op win_prob
+                    except Exception:
+                        pass
+
                     signals.append(TradeSignal(
                         symbol=pair,
                         broker="kraken",
                         direction=direction,
-                        win_probability=max(0.55, min(0.75, win_rate)),
+                        win_probability=max(0.55, min(0.75, win_rate + funding_boost)),
                         expected_win_pct=abs(imb) * 0.02,
                         expected_loss_pct=0.005,
                         current_price=price,
                         strategy_id="arbitrage",
-                        notes=f"Scalper {market}: imbalance={imb:.3f} spread={spread_pct:.4%}",
+                        notes=f"Scalper {market}: imbalance={imb:.3f} spread={spread_pct:.4%} funding_boost={funding_boost:.2f}",
                     ))
             except Exception as e:
                 log.warning(f"Crypto Scalper fout {pair}: {e}")

@@ -64,7 +64,7 @@
     color: var(--text-bright); letter-spacing: 0.05em; text-transform: uppercase;
   }
   header p { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
-  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav { display: flex; gap: 4px; margin-left: auto; margin-right: 16px; }
   nav a {
     font-family: var(--mono); font-size: 11px; text-decoration: none;
     padding: 6px 14px; border-radius: 6px; border: 1px solid transparent; transition: all 0.2s;
@@ -72,6 +72,16 @@
   nav a.active { color: var(--accent); border-color: var(--accent); background: rgba(0,255,136,0.05); }
   nav a:not(.active) { color: var(--text-dim); }
   nav a:not(.active):hover { color: var(--text); border-color: var(--border); }
+  .status-bar {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
 
   main {
     position: relative; z-index: 1;
@@ -258,7 +268,22 @@
     <a href="/performance">Performance</a>
     <a href="/assets" class="active">Assets</a>
   </nav>
+  <div class="status-bar">
+    <div class="status-dot"></div>
+    <span id="clock"></span>
+  </div>
 </header>
+
+<script>
+(function(){
+  function tick(){
+    var d=new Date();
+    document.getElementById('clock').textContent=
+      d.toLocaleTimeString('nl-BE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+  tick(); setInterval(tick,1000);
+})();
+</script>
 
 <main>
 
@@ -367,9 +392,9 @@
     <div class="broker-icon ibkr">IB</div>
     <div>
       <div class="broker-name">Interactive Brokers</div>
-      <div class="broker-desc">Aandelen, ETFs, Forex — via IB Gateway (:4001)</div>
+      <div class="broker-desc">Aandelen, ETFs, Forex — via IB Gateway (:4002 paper)</div>
     </div>
-    <span class="broker-status inactive">GATEWAY UIT</span>
+    <span class="broker-status active">ACTIEF</span>
   </div>
   <table class="asset-table">
     <thead>

@@ -14,6 +14,11 @@ ib_async==2.1.0
 # ── Data analyse ──────────────────────────────
 pandas==3.0.1
 
+# ── Macro Risk Engine ────────────────────────
+yfinance>=1.2.0
+fredapi>=0.5.2
+requests>=2.31.0
+
 # ── Web / API ─────────────────────────────────
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0

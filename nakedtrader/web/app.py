@@ -96,6 +96,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/macro-risk":
             self._serve_macro_risk()
 
+        elif path == "/api/market-data":
+            self._serve_market_data()
+
         elif path == "/api/money-management":
             self._serve_money_management()
 
@@ -206,6 +209,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
             engine = MacroRiskEngine(emergency_score=threshold)
             report = engine.evaluate()
             self._json(200, report.to_dict())
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _serve_market_data(self):
+        """Retourneer cross-exchange orderbook, funding rates, en marktdata."""
+        try:
+            from nakedtrader.bots.data_feeds import (
+                _cross_exchange_orderbook, _binance_funding_rate,
+                _kraken_futures_funding,
+            )
+            result = {}
+            try:
+                result["cross_orderbook"] = _cross_exchange_orderbook("BTC")
+            except Exception as e:
+                result["cross_orderbook"] = {"error": str(e)}
+            try:
+                result["btc_funding"] = _binance_funding_rate("BTCUSDT")
+            except Exception as e:
+                result["btc_funding"] = {"error": str(e)}
+            try:
+                result["eth_funding"] = _binance_funding_rate("ETHUSDT")
+            except Exception as e:
+                result["eth_funding"] = {"error": str(e)}
+            try:
+                result["kraken_futures"] = _kraken_futures_funding("PF_XBTUSD")
+            except Exception as e:
+                result["kraken_futures"] = {"error": str(e)}
+            self._json(200, result)
         except Exception as e:
             self._json(500, {"error": str(e)})
 

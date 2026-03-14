@@ -74,7 +74,7 @@ MANIFEST = {
     "signal_layers": {
         "layer_1_market":       ["vix", "vix_term_structure", "put_call_ratio", "credit_spread"],
         "layer_2_geopolitical": ["oil_shock", "gold_dollar_ratio", "gdelt_conflict_index"],
-        "layer_3_macro":        ["macro_calendar_risk", "fed_liquidity"],
+        "layer_3_macro":        ["macro_calendar_risk", "fed_liquidity", "fear_greed", "funding_rate"],
     },
     "data_sources": {
         "yfinance": "gratis, geen API key — ^VIX, ^VVIX, GC=F, CL=F, SPY",
@@ -150,15 +150,17 @@ class MacroRiskEngine:
 
     # ── Gewichten per signaal (som = 1.0) ──
     SIGNAL_WEIGHTS = {
-        "vix":                  0.15,
-        "vix_term_structure":   0.10,
-        "put_call_ratio":       0.10,
-        "credit_spread":        0.15,
-        "oil_shock":            0.15,
-        "gold_dollar_ratio":    0.10,
-        "gdelt_conflict_index": 0.10,
-        "macro_calendar_risk":  0.10,
+        "vix":                  0.13,
+        "vix_term_structure":   0.09,
+        "put_call_ratio":       0.09,
+        "credit_spread":        0.13,
+        "oil_shock":            0.13,
+        "gold_dollar_ratio":    0.09,
+        "gdelt_conflict_index": 0.09,
+        "macro_calendar_risk":  0.09,
         "fed_liquidity":        0.05,
+        "fear_greed":           0.06,
+        "funding_rate":         0.05,
     }
 
     def __init__(
@@ -220,9 +222,11 @@ class MacroRiskEngine:
         signals.update(self._fetch_gold_dollar(alerts, dq))
         signals.update(self._fetch_gdelt(alerts, dq))
 
-        # Laag 3 — Macro-liquiditeit
+        # Laag 3 — Macro-liquiditeit + sentiment
         signals.update(self._fetch_macro_calendar(alerts, dq))
         signals.update(self._fetch_fed_liquidity(alerts, dq))
+        signals.update(self._fetch_fear_greed(alerts, dq))
+        signals.update(self._fetch_funding_rates(alerts, dq))
 
         # Score berekenen
         risk_score = self._compute_score(signals)
@@ -527,20 +531,48 @@ class MacroRiskEngine:
     def _fetch_macro_calendar(self, alerts: list, dq: dict) -> dict:
         result = {"macro_calendar_risk": 0.0}
 
-        # High-impact events (handmatig of via toekomstige API)
-        HIGH_IMPACT_EVENTS: list[tuple[str, str]] = [
+        events: list[tuple[str, str]] = []
+
+        # Probeer Finnhub economic calendar (gratis tier, 60 req/min)
+        finnhub_key = os.getenv("FINNHUB_API_KEY", "")
+        if finnhub_key and _REQUESTS_AVAILABLE:
+            try:
+                today = datetime.utcnow().date()
+                from_date = today.strftime("%Y-%m-%d")
+                to_date = (today + timedelta(days=3)).strftime("%Y-%m-%d")
+                resp = requests.get(
+                    "https://finnhub.io/api/v1/calendar/economic",
+                    params={"from": from_date, "to": to_date, "token": finnhub_key},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for ev in data.get("economicCalendar", []):
+                        if ev.get("impact", "").lower() == "high":
+                            events.append((ev.get("date", "")[:10], ev.get("event", "onbekend")))
+                    log.debug("Finnhub calendar: %d high-impact events", len(events))
+            except Exception as e:
+                log.debug("Finnhub calendar mislukt: %s", e)
+
+        # Fallback: handmatige high-impact events
+        STATIC_EVENTS: list[tuple[str, str]] = [
             # ("YYYY-MM-DD", "omschrijving"),
         ]
+        events.extend(STATIC_EVENTS)
 
         today = datetime.utcnow().date()
-        for date_str, description in HIGH_IMPACT_EVENTS:
-            event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        for date_str, description in events:
+            try:
+                event_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                continue
             days_away = (event_date - today).days
             if 0 <= days_away <= 2:
                 score = 1.0 - (days_away / 3)
                 result["macro_calendar_risk"] = max(result["macro_calendar_risk"], score)
                 alerts.append(f"High-impact event over {days_away} dag(en): {description}")
 
+        result["macro_calendar_events"] = len(events)
         dq["macro_calendar"] = True
         return result
 
@@ -571,6 +603,100 @@ class MacroRiskEngine:
             log.warning("Fed liquiditeit mislukt: %s", e)
             dq["FRED_tga"] = False
 
+        return result
+
+    # ── Laag 3b: Crypto sentiment + funding ──────────────────────────────────
+
+    def _fetch_fear_greed(self, alerts: list, dq: dict) -> dict:
+        """Crypto Fear & Greed Index (alternative.me — gratis, geen key)."""
+        result = {"fear_greed": 0.5}
+        if not _REQUESTS_AVAILABLE:
+            dq["fear_greed"] = False
+            return result
+        try:
+            resp = requests.get(
+                "https://api.alternative.me/fng/?limit=1", timeout=10,
+            )
+            data = resp.json().get("data", [])
+            if not data:
+                raise ValueError("Geen Fear & Greed data")
+            value = int(data[0]["value"])  # 0=extreme fear, 100=extreme greed
+            label = data[0].get("value_classification", "")
+            # Normaliseer: extreme fear (0-25)=hoog risico, extreme greed (75-100)=hoog risico
+            # Neutraal (40-60)=laag risico
+            distance_from_50 = abs(value - 50)
+            result["fear_greed"] = round(min(distance_from_50 / 50, 1.0), 3)
+            result["fear_greed_raw"] = value
+            result["fear_greed_label"] = label
+            dq["fear_greed"] = True
+
+            if value <= 20:
+                alerts.append(f"Extreme Fear: F&G={value} ({label})")
+            elif value >= 80:
+                alerts.append(f"Extreme Greed: F&G={value} ({label})")
+
+        except Exception as e:
+            log.warning("Fear & Greed mislukt: %s", e)
+            dq["fear_greed"] = False
+        return result
+
+    def _fetch_funding_rates(self, alerts: list, dq: dict) -> dict:
+        """Binance perpetual funding rates (gratis, public API)."""
+        result = {"funding_rate": 0.5}
+        if not _REQUESTS_AVAILABLE:
+            dq["funding_rate"] = False
+            return result
+        try:
+            resp = requests.get(
+                "https://fapi.binance.com/fapi/v1/fundingRate",
+                params={"symbol": "BTCUSDT", "limit": 1},
+                timeout=10,
+            )
+            data = resp.json()
+            if not data:
+                raise ValueError("Geen funding rate data")
+            rate = float(data[0]["fundingRate"])
+            result["funding_rate_raw"] = round(rate * 100, 4)  # als percentage
+
+            # Normaliseer: -0.1% tot +0.1% = neutraal, extremen = hoog risico
+            abs_rate = abs(rate)
+            result["funding_rate"] = round(min(abs_rate / 0.001, 1.0), 3)
+            dq["funding_rate"] = True
+
+            if rate > 0.0005:
+                alerts.append(f"Hoge funding rate BTC: {rate*100:.4f}% (long-heavy)")
+            elif rate < -0.0005:
+                alerts.append(f"Negatieve funding rate BTC: {rate*100:.4f}% (short-heavy)")
+
+            # Voeg ook ETH en open interest toe
+            try:
+                eth_resp = requests.get(
+                    "https://fapi.binance.com/fapi/v1/fundingRate",
+                    params={"symbol": "ETHUSDT", "limit": 1},
+                    timeout=10,
+                )
+                eth_data = eth_resp.json()
+                if eth_data:
+                    result["eth_funding_rate_raw"] = round(float(eth_data[0]["fundingRate"]) * 100, 4)
+            except Exception:
+                pass
+
+            # Open Interest
+            try:
+                oi_resp = requests.get(
+                    "https://fapi.binance.com/fapi/v1/openInterest",
+                    params={"symbol": "BTCUSDT"},
+                    timeout=10,
+                )
+                oi_data = oi_resp.json()
+                if oi_data:
+                    result["btc_open_interest"] = float(oi_data.get("openInterest", 0))
+            except Exception:
+                pass
+
+        except Exception as e:
+            log.warning("Funding rate mislukt: %s", e)
+            dq["funding_rate"] = False
         return result
 
     # ── Score aggregatie ─────────────────────────────────────────────────────

@@ -89,17 +89,34 @@ class BreakoutStrategy(BaseStrategy):
                     price = _kraken_ticker(pair) or float(latest_close)
                     win_rate = self._get_rolling_win_rate()
 
+                    # Open Interest bevestiging: stijgende OI = echte breakout
+                    oi_note = ""
+                    oi_boost = 0.0
+                    try:
+                        from nakedtrader.bots.data_feeds import _binance_funding_rate
+                        sym_map = {"XXBTZEUR": "BTCUSDT", "XETHZEUR": "ETHUSDT", "SOLUSD": "SOLUSDT"}
+                        bn_sym = sym_map.get(pair)
+                        if bn_sym:
+                            fr = _binance_funding_rate(bn_sym)
+                            oi = fr.get("open_interest", 0)
+                            if oi > 0:
+                                oi_note = f" OI={oi:.0f}"
+                                # Hoge OI = meer convictie in breakout
+                                oi_boost = 0.02
+                    except Exception:
+                        pass
+
                     signals.append(TradeSignal(
                         symbol=pair,
                         broker=preferred_broker,
                         direction="long",
-                        win_probability=max(0.40, min(0.65, win_rate)),
+                        win_probability=max(0.40, min(0.65, win_rate + oi_boost)),
                         expected_win_pct=0.15,
                         expected_loss_pct=0.07,
                         current_price=price,
                         strategy_id="breakout",
-                        notes=f"Breakout Hunter {market}: boven Donchian({latest_dc_upper:.2f}) ATR expanding via {preferred_broker}",
+                        notes=f"Breakout Hunter {market}: boven Donchian({latest_dc_upper:.2f}) ATR expanding via {preferred_broker}{oi_note}",
                     ))
             except Exception as e:
                 log.warning(f"Breakout Hunter fout {pair}: {e}")
-        return signals
+        return self._llm_enhance_signals(signals)

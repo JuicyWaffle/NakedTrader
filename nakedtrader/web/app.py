@@ -307,7 +307,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
                 bots[sid] = {
                     "name": profile["name"],
-                    "timeframe": {"momentum": "1h", "mean-reversion": "15m", "breakout": "4h", "arbitrage": "tick", "trend-follow": "1d"}.get(sid, ""),
+                    "timeframe": {"momentum": "1h", "mean-reversion": "15m", "breakout": "4h", "arbitrage": "tick", "trend-follow": "1d", "funding-contrarian": "8h", "cross-arb": "tick", "vol-regime": "4h"}.get(sid, ""),
                     "broker": profile["broker"],
                     "expected_trades_per_day": expected_tpd,
                     "actual_trades_yesterday": actual_yesterday,
@@ -437,13 +437,23 @@ def _generate_bot_analysis(
 
 def _get_bot_list():
     """Legacy /api/bots endpoint."""
-    return [
-        {"id": "momentum", "name": "Momentum Rider", "color": "#00ff88"},
-        {"id": "mean-reversion", "name": "Mean Reversion", "color": "#0088ff"},
-        {"id": "breakout", "name": "Breakout Hunter", "color": "#ff4466"},
-        {"id": "trend-follow", "name": "Macro Trend", "color": "#ffaa44"},
-        {"id": "arbitrage", "name": "Crypto Scalper", "color": "#aa44ff"},
-    ]
+    try:
+        from nakedtrader.bots.registry import STRATEGIES
+        return [
+            {"id": sid, "name": s.meta.name, "color": s.meta.color}
+            for sid, s in STRATEGIES.items()
+        ]
+    except Exception:
+        return [
+            {"id": "momentum", "name": "Momentum Rider", "color": "#00ff88"},
+            {"id": "mean-reversion", "name": "Mean Reversion", "color": "#0088ff"},
+            {"id": "breakout", "name": "Breakout Hunter", "color": "#ff4466"},
+            {"id": "trend-follow", "name": "Macro Trend", "color": "#ffaa44"},
+            {"id": "arbitrage", "name": "Crypto Scalper", "color": "#aa44ff"},
+            {"id": "funding-contrarian", "name": "Funding Contrarian", "color": "#ff8800"},
+            {"id": "cross-arb", "name": "Cross-Exchange Arb", "color": "#44ddff"},
+            {"id": "vol-regime", "name": "Volatility Regime", "color": "#ddaa00"},
+        ]
 
 
 class FastHTTPServer(ThreadingMixIn, HTTPServer):

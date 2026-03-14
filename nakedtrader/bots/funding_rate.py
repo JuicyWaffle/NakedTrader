@@ -14,7 +14,7 @@ import numpy as np
 from nakedtrader.types import TradeSignal, StrategyMeta
 from nakedtrader.indicators import rsi
 from .base import BaseStrategy
-from .data_feeds import _binance_funding_rate, _kraken_ohlc, _kraken_ticker
+from .data_feeds import _binance_funding_rate, _kraken_ohlc, _kraken_ticker, _kraken_futures_funding
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +107,21 @@ class FundingRateStrategy(BaseStrategy):
                     strategy_id="funding-contrarian",
                     notes=notes,
                 ))
+                # Cross-validate met Kraken Futures funding
+                try:
+                    kf_map = {"BTCUSDT": "PF_XBTUSD", "ETHUSDT": "PF_ETHUSD"}
+                    kf_sym = kf_map.get(pair_map["binance"])
+                    if kf_sym:
+                        kf = _kraken_futures_funding(kf_sym)
+                        kf_rate = kf.get("funding_rate", 0)
+                        # Als beide exchanges dezelfde richting tonen = sterker signaal
+                        if (rate > 0 and kf_rate > 0) or (rate < 0 and kf_rate < 0):
+                            signal = signals[-1]
+                            signal.win_probability = min(0.75, signal.win_probability + 0.02)
+                            signal.notes += f" KrakenFut={kf_rate*100:.4f}%"
+                except Exception:
+                    pass
+
             except Exception as e:
                 log.warning("Funding Contrarian fout %s: %s", market, e)
-        return signals
+        return self._llm_enhance_signals(signals)

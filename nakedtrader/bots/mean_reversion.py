@@ -38,7 +38,7 @@ class MeanReversionStrategy(BaseStrategy):
         markets=["BTC/EUR", "ETH/EUR", "SOL/EUR"],
         indicators=["BB(20)", "Z-score(20)", "VIX proxy"],
         timeframe="15m",
-        broker="ibkr",
+        broker="kraken",
     )
 
     PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/EUR": "SOLEUR"}
@@ -88,17 +88,33 @@ class MeanReversionStrategy(BaseStrategy):
                     # Lage VIX -> markt is rustig -> verbreed SL
                     sl_adj = 0.04 if latest_vix < 15 else 0.03
 
+                    # Fear & Greed bevestiging: extreme fear versterkt mean reversion
+                    fg_boost = 0.0
+                    fg_note = ""
+                    try:
+                        import requests
+                        resp = requests.get("https://api.alternative.me/fng/?limit=1", timeout=5)
+                        fg_val = int(resp.json().get("data", [{}])[0].get("value", 50))
+                        if fg_val <= 25:
+                            fg_boost = 0.03  # extreme fear = ideaal voor mean reversion
+                            fg_note = f" F&G={fg_val}(fear)"
+                        elif fg_val >= 75:
+                            fg_boost = -0.02  # extreme greed = mean reversion riskier
+                            fg_note = f" F&G={fg_val}(greed)"
+                    except Exception:
+                        pass
+
                     signals.append(TradeSignal(
                         symbol=pair,
-                        broker="ibkr",
+                        broker="kraken",
                         direction="long",
-                        win_probability=max(0.50, min(0.70, win_rate)),
+                        win_probability=max(0.50, min(0.70, win_rate + fg_boost)),
                         expected_win_pct=0.08,
                         expected_loss_pct=sl_adj,
                         current_price=price,
                         strategy_id="mean-reversion",
-                        notes=f"Mean Reversion {market}: Z={latest_z:.2f} BB({bb_mult:.1f}) VIX={latest_vix:.1f}",
+                        notes=f"Mean Reversion {market}: Z={latest_z:.2f} BB({bb_mult:.1f}) VIX={latest_vix:.1f}{fg_note}",
                     ))
             except Exception as e:
                 log.warning(f"Mean Reversion fout {pair}: {e}")
-        return signals
+        return self._llm_enhance_signals(signals)

@@ -151,4 +151,4 @@ class VolRegimeStrategy(BaseStrategy):
                 except Exception as e:
                     log.warning("Vol Regime defensief fout %s: %s", market, e)
 
-        return signals
+        return self._llm_enhance_signals(signals)

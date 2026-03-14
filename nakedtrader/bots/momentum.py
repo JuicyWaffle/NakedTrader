@@ -36,7 +36,7 @@ class MomentumStrategy(BaseStrategy):
         markets=["BTC/EUR", "ETH/EUR", "SOL/EUR", "ADA/EUR"],
         indicators=["EMA(9/21)", "RSI(14)", "ATR(14)"],
         timeframe="1h",
-        broker="ibkr",
+        broker="kraken",
     )
 
     PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/EUR": "SOLEUR", "ADA/EUR": "ADAEUR"}
@@ -89,17 +89,43 @@ class MomentumStrategy(BaseStrategy):
                     if trigger:
                         price = _kraken_ticker(pair) or float(closes[-1])
                         win_rate = self._get_rolling_win_rate()
+
+                        # Multi-factor bevestiging: funding rate + Fear & Greed
+                        confirmation_boost = 0.0
+                        extra_notes = []
+                        try:
+                            from nakedtrader.bots.data_feeds import _binance_funding_rate
+                            sym_map = {"XXBTZEUR": "BTCUSDT", "XETHZEUR": "ETHUSDT"}
+                            bn_sym = sym_map.get(pair)
+                            if bn_sym:
+                                fr = _binance_funding_rate(bn_sym)
+                                rate = fr.get("funding_rate", 0)
+                                # Negatieve funding = contraire bevestiging voor long momentum
+                                if rate < -0.0002:
+                                    confirmation_boost += 0.02
+                                    extra_notes.append(f"FR={rate*100:.3f}%")
+                                # Sterk positieve funding = verzwakking (crowded long)
+                                elif rate > 0.0005:
+                                    confirmation_boost -= 0.02
+                                    extra_notes.append(f"FR_warn={rate*100:.3f}%")
+                        except Exception:
+                            pass
+
+                        note = f"Momentum Rider {market}: EMA({ema_fast}/{ema_slow}) cross RSI={rsi_vals[-1]:.1f}"
+                        if extra_notes:
+                            note += " " + " ".join(extra_notes)
+
                         signals.append(TradeSignal(
                             symbol=pair,
-                            broker="ibkr",
+                            broker="kraken",
                             direction="long",
-                            win_probability=max(0.45, min(0.70, win_rate)),
+                            win_probability=max(0.45, min(0.70, win_rate + confirmation_boost)),
                             expected_win_pct=0.10,
                             expected_loss_pct=0.05,
                             current_price=price,
                             strategy_id="momentum",
-                            notes=f"Momentum Rider {market}: EMA({ema_fast}/{ema_slow}) cross RSI={rsi_vals[-1]:.1f}",
+                            notes=note,
                         ))
             except Exception as e:
                 log.warning(f"Momentum Rider fout {pair}: {e}")
-        return signals
+        return self._llm_enhance_signals(signals)

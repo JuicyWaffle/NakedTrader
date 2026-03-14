@@ -23,8 +23,12 @@ log = logging.getLogger(__name__)
 
 STARTING_CAPITAL = 100_000.0
 
-# Strategieën die Kraken public API gebruiken (geen auth nodig)
-KRAKEN_STRATEGIES = {"momentum", "mean-reversion", "breakout", "arbitrage"}
+# Alle strategieën die via Kraken public API + andere gratis data handelen.
+# trend-follow werkt nu ook via Kraken fallback (BTC als macro proxy).
+KRAKEN_STRATEGIES = {
+    "momentum", "mean-reversion", "breakout", "arbitrage",
+    "trend-follow", "funding-contrarian", "cross-arb", "vol-regime",
+}
 
 
 class VirtualBankBot:

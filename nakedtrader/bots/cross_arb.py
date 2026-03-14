@@ -81,4 +81,4 @@ class CrossArbStrategy(BaseStrategy):
                     ))
             except Exception as e:
                 log.warning("Cross-Arb fout %s: %s", asset, e)
-        return signals
+        return self._llm_enhance_signals(signals)

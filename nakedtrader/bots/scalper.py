@@ -99,4 +99,4 @@ class ArbitrageStrategy(BaseStrategy):
                     ))
             except Exception as e:
                 log.warning(f"Crypto Scalper fout {pair}: {e}")
-        return signals
+        return self._llm_enhance_signals(signals)

@@ -39,5 +39,9 @@ macro_risk_enabled: true       # geopolitieke risicobewaking
 macro_risk_interval_min: 60    # hercheck elke 60 minuten
 macro_risk_veto_threshold: 0.85 # noodrem bij score >= 0.85
 
+# ── Ollama AI ───────────────────────────────
+ollama_enabled: true            # AI-verrijking via lokale Ollama
+ollama_url: "http://localhost:11434"
+
 # ── Loop ──────────────────────────────────────
 interval_seconds: 60           # seconden tussen polling rondes

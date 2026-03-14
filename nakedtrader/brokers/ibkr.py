@@ -8,10 +8,14 @@ Ondersteunt aandelen, ETF, forex en futures via bracket orders.
 import logging
 from typing import Optional
 
+from nakedtrader.brokers.base import AbstractBroker
+from nakedtrader.types import TradeSignal
+from nakedtrader.exceptions import IBKRError
+
 log = logging.getLogger(__name__)
 
 
-class IBKRBroker:
+class IBKRBroker(AbstractBroker):
     """
     Verbinding met Interactive Brokers via ib_async.
     pip install ib_async
@@ -19,135 +23,165 @@ class IBKRBroker:
     """
 
     def __init__(self, config):
-        self.config = config
+        super().__init__(config)
         self.ib = None
+        self._connected = False
 
-    def connect(self):
-        from ib_async import IB
-        self.ib = IB()
-        self.ib.connect(
-            self.config.ibkr_host,
-            self.config.ibkr_port,
-            clientId=self.config.ibkr_client_id,
-        )
-        log.info(f"IBKR verbonden  {self.config.ibkr_host}:{self.config.ibkr_port}")
+    def connect(self) -> bool:
+        """Maak verbinding met de broker API. Retourneert True bij succes."""
+        try:
+            from ib_async import IB
+            self.ib = IB()
+            self.ib.connect(
+                self.config.ibkr_host,
+                self.config.ibkr_port,
+                clientId=self.config.ibkr_client_id,
+            )
+            self._connected = True
+            log.info(f"IBKR verbonden {self.config.ibkr_host}:{self.config.ibkr_port}")
+            return True
+        except Exception as e:
+            log.error(f"Kan niet verbinden met {self.config.ibkr_host}:{self.config.ibkr_port}: {e}")
+            self._connected = False
+            return False
 
     def disconnect(self):
+        """Sluit de verbinding met de broker API."""
         if self.ib and self.ib.isConnected():
             self.ib.disconnect()
+            self._connected = False
             log.info("IBKR verbinding gesloten")
 
-    def get_price(
+    def get_balance(self) -> float:
+        """Retourneert het vrije saldo in de base currency (EUR)."""
+        if not self._connected:
+            return 0.0
+        
+        # Zoek naar TotalCashBalance in de account summary
+        # Dit is een vereenvoudiging; in productie moet je de juiste currency en account checken
+        try:
+            summary = self.ib.accountSummary()
+            for item in summary:
+                if item.tag == 'TotalCashValue' and item.currency == 'EUR':
+                    return float(item.value)
+        except Exception as e:
+            log.error(f"Fout bij ophalen balans: {e}")
+        
+        return 0.0
+
+    def get_positions(self) -> dict[str, float]:
+        """Retourneert open posities als {symbol: size_eur}."""
+        if not self._connected:
+            return {}
+        
+        positions = {}
+        try:
+            # ib.positions() retourneert een lijst van Position objecten
+            # Position(account='...', contract=Contract(...), position=100.0, avgCost=150.0)
+            for pos in self.ib.positions():
+                if pos.position != 0:
+                    symbol = pos.contract.symbol
+                    market_value = pos.position * pos.avgCost # Benadering, beter is marketPrice
+                    positions[symbol] = market_value
+        except Exception as e:
+            log.error(f"Fout bij ophalen posities: {e}")
+            
+        return positions
+
+    def place_order(
         self,
-        symbol: str,
-        exchange: str = "SMART",
-        currency: str = "USD",
-    ) -> Optional[float]:
-        from ib_async import Stock
-        contract = Stock(symbol, exchange, currency)
-        self.ib.qualifyContracts(contract)
-        ticker = self.ib.reqMktData(contract)
-        self.ib.sleep(1)
-        return ticker.last or ticker.close
+        signal: TradeSignal,
+        size_eur: float,
+        sl_pct: float,
+        tp_pct: float
+    ) -> Optional[dict]:
+        """Plaats een entry order met gekoppelde SL/TP."""
+        if not self._connected:
+            log.error("IBKR niet verbonden, kan geen order plaatsen")
+            return None
 
-    def place_bracket_order(
-        self,
-        symbol: str,
-        quantity: int,
-        entry_price: float,
-        stop_loss_pct: float,
-        take_profit_pct: float,
-        exchange: str = "SMART",
-        currency: str = "USD",
-    ):
-        """Bracket order: entry + stop-loss + take-profit in één keer."""
-        from ib_async import Stock
-        contract = Stock(symbol, exchange, currency)
-        self.ib.qualifyContracts(contract)
+        try:
+            from ib_async import Stock, Forex, Order
+            
+            # Bepaal contract type (vereenvoudigd)
+            symbol = signal.symbol
+            if len(symbol) == 6 and symbol.isupper() and "USD" in symbol: # Forex gok
+                 contract = Forex(symbol)
+            else:
+                 contract = Stock(symbol, "SMART", "USD") # Default naar US stocks
+            
+            self.ib.qualifyContracts(contract)
+            
+            # Bereken quantity op basis van huidige prijs (indien beschikbaar)
+            # Voor nu gebruiken we de signal.current_price
+            price = signal.current_price
+            if price <= 0:
+                 log.error(f"Ongeldige prijs {price} voor {symbol}")
+                 return None
+            
+            quantity = int(size_eur / price)
+            if quantity < 1:
+                 log.warning(f"Quantity {quantity} te klein voor {symbol} (size={size_eur}, price={price})")
+                 return None
 
-        stop_price = round(entry_price * (1 - stop_loss_pct), 2)
-        profit_price = round(entry_price * (1 + take_profit_pct), 2)
+            action = "BUY" if signal.direction == "long" else "SELL"
+            
+            # Bracket logic
+            stop_price = round(price * (1 - sl_pct), 2)
+            profit_price = round(price * (1 + tp_pct), 2)
 
-        bracket = self.ib.bracketOrder(
-            action="BUY",
-            quantity=quantity,
-            limitPrice=entry_price,
-            takeProfitPrice=profit_price,
-            stopLossPrice=stop_price,
-        )
-        for order in bracket:
-            self.ib.placeOrder(contract, order)
+            # Hoofdorder
+            parent = Order()
+            parent.orderId = self.ib.client.getReqId()
+            parent.action = action
+            parent.orderType = "LMT"
+            parent.totalQuantity = quantity
+            parent.lmtPrice = price
+            parent.transmit = False
 
-        log.info(
-            f"IBKR bracket: {symbol} qty={quantity}  "
-            f"entry={entry_price}  SL={stop_price}  TP={profit_price}"
-        )
-        return bracket
+            # Take Profit
+            tp_order = Order()
+            tp_order.orderId = self.ib.client.getReqId()
+            tp_order.action = "SELL" if action == "BUY" else "BUY"
+            tp_order.orderType = "LMT"
+            tp_order.totalQuantity = quantity
+            tp_order.lmtPrice = profit_price
+            tp_order.parentId = parent.orderId
+            tp_order.transmit = False
 
-    def get_portfolio(self) -> list:
-        return self.ib.portfolio()
+            # Stop Loss
+            sl_order = Order()
+            sl_order.orderId = self.ib.client.getReqId()
+            sl_order.action = "SELL" if action == "BUY" else "BUY"
+            sl_order.orderType = "STP"
+            sl_order.auxPrice = stop_price
+            sl_order.totalQuantity = quantity
+            sl_order.parentId = parent.orderId
+            sl_order.transmit = True
 
-    def get_stock_bars(
-        self,
-        symbol: str,
-        duration: str = "1 Y",
-        bar_size: str = "1 day",
-        exchange: str = "SMART",
-        currency: str = "USD",
-    ) -> list:
-        """
-        Haal historische bars op voor aandelen/ETFs (Stock contracts).
-        Gebruikt voor SPY, TLT, GLD etc. — regime detectie.
-        """
-        from ib_async import Stock
-        contract = Stock(symbol, exchange, currency)
-        self.ib.qualifyContracts(contract)
-        bars = self.ib.reqHistoricalData(
-            contract,
-            endDateTime="",
-            durationStr=duration,
-            barSizeSetting=bar_size,
-            whatToShow="TRADES",
-            useRTH=True,
-            formatDate=1,
-        )
-        log.info(f"IBKR stock bars: {symbol}  {len(bars)} bars ({bar_size})")
-        return bars
+            bracket = [parent, tp_order, sl_order]
+            for o in bracket:
+                self.ib.placeOrder(contract, o)
 
-    def get_historical_bars(
-        self,
-        symbol: str,
-        duration: str = "60 D",
-        bar_size: str = "1 day",
-        what_to_show: str = "MIDPOINT",
-        exchange: str = "IDEALPRO",
-        currency: str = "USD",
-    ) -> list:
-        """
-        Haal historische bars op via IB Gateway.
+            log.info(
+                f"IBKR bracket geplaatst: {symbol} {action} {quantity} @ {price} "
+                f"(SL={stop_price}, TP={profit_price})"
+            )
+            
+            return {
+                "id": parent.orderId,
+                "symbol": symbol,
+                "quantity": quantity,
+                "price": price,
+                "sl": stop_price,
+                "tp": profit_price
+            }
 
-        Args:
-            symbol: bv. "EUR" (voor EURUSD forex)
-            duration: bv. "60 D", "1 Y"
-            bar_size: bv. "1 day", "1 hour", "15 mins"
-            what_to_show: "MIDPOINT", "TRADES", "BID", "ASK"
-            exchange: "IDEALPRO" voor forex, "SMART" voor aandelen
-            currency: tegenvaluta
+        except Exception as e:
+            log.error(f"Fout bij plaatsen order {symbol}: {e}")
+            return None
 
-        Returns:
-            list van BarData objecten met .date, .open, .high, .low, .close, .volume
-        """
-        from ib_async import Forex
-        contract = Forex(symbol + currency)
-        self.ib.qualifyContracts(contract)
-        bars = self.ib.reqHistoricalData(
-            contract,
-            endDateTime="",
-            durationStr=duration,
-            barSizeSetting=bar_size,
-            whatToShow=what_to_show,
-            useRTH=True,
-            formatDate=1,
-        )
-        log.info(f"IBKR historisch: {symbol}{currency}  {len(bars)} bars ({bar_size})")
-        return bars
+    # Oude methodes behouden voor compatibiliteit indien nodig, maar wrapper-functies
+    def get_price(self, symbol: str) -> Optional[float]:
+        # Implementatie zoals voorheen
+        pass

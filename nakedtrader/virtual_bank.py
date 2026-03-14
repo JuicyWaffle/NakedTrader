@@ -6,6 +6,7 @@ Kraken-marktprijzen via strategy.generate_signals().
 
 State opslag: data/virtual_bank_state.json
 Transacties: via VirtualLedger (data/ledger.json)
+Portfolio history: data/virtual_bank_history.json (append-only snapshots)
 """
 
 import json
@@ -16,6 +17,7 @@ from pathlib import Path
 
 from nakedtrader.bots.data_feeds import _kraken_ticker
 from nakedtrader.performance.ledger import VirtualLedger
+from nakedtrader.utils import atomic_write_json
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +35,7 @@ class VirtualBankBot:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.ledger = VirtualLedger(data_dir=data_dir)
         self.state_path = self.data_dir / "virtual_bank_state.json"
+        self.history_path = self.data_dir / "virtual_bank_history.json"
         self.state = self._load_state()
 
     # ─── State persistence ─────────────────────────
@@ -61,10 +64,55 @@ class VirtualBankBot:
         """Schrijf state naar disk (atomic)."""
         if state is None:
             state = self.state
-        tmp = self.state_path.with_suffix(".tmp")
-        with open(tmp, "w") as f:
-            json.dump(state, f, ensure_ascii=False, indent=2)
-        tmp.replace(self.state_path)
+        atomic_write_json(self.state_path, state, indent=2)
+
+    # ─── Portfolio history snapshots ─────────────────
+
+    def _record_snapshot(self, live_prices: dict):
+        """Append timestamped portfolio value per strategy to history file."""
+        ts = datetime.now().isoformat(timespec="seconds")
+        entry = {"timestamp": ts, "values": {}}
+
+        for sid, bot_state in self.state.items():
+            cash = bot_state.get("cash", STARTING_CAPITAL)
+            total = cash
+            for symbol, pos in bot_state.get("positions", {}).items():
+                price = live_prices.get(symbol, pos.get("buy_price", 0))
+                total += price * pos.get("quantity", 0)
+            entry["values"][sid] = round(total, 2)
+
+        # Load existing history
+        history = []
+        if self.history_path.exists():
+            try:
+                with open(self.history_path) as f:
+                    history = json.load(f)
+            except (json.JSONDecodeError, ValueError):
+                history = []
+
+        history.append(entry)
+
+        # Keep max 50.000 entries (~70 dagen bij 2 min interval)
+        if len(history) > 50_000:
+            history = history[-50_000:]
+
+        atomic_write_json(self.history_path, history)
+
+    def _fetch_live_prices(self) -> dict:
+        """Haal live prijzen op voor alle open posities."""
+        symbols = set()
+        for bot_state in self.state.values():
+            symbols.update(bot_state.get("positions", {}).keys())
+
+        prices = {}
+        for symbol in symbols:
+            try:
+                price = _kraken_ticker(symbol)
+                if price is not None:
+                    prices[symbol] = price
+            except Exception:
+                pass
+        return prices
 
     # ─── Main loop ─────────────────────────────────
 
@@ -102,6 +150,13 @@ class VirtualBankBot:
                     log.warning(f"[{sid}] Signal check fout: {e}")
 
             self._save_state()
+
+            # Record portfolio value snapshot
+            try:
+                live_prices = self._fetch_live_prices()
+                self._record_snapshot(live_prices)
+            except Exception as e:
+                log.warning(f"Snapshot fout: {e}")
 
             try:
                 time.sleep(interval)
@@ -216,56 +271,8 @@ class VirtualBankBot:
     def get_portfolio(self, strategy_id: str = None) -> dict:
         """Retourneer cash + open posities per bot."""
         from nakedtrader.bots.registry import STRATEGIES
-
-        result = {}
         sids = [strategy_id] if strategy_id else list(STRATEGIES.keys())
-
-        for sid in sids:
-            bot_state = self.state.get(sid, {"cash": STARTING_CAPITAL, "positions": {}})
-            cash = bot_state["cash"]
-            positions = bot_state.get("positions", {})
-
-            pos_list = []
-            total_value = cash
-            for symbol, pos in positions.items():
-                # Probeer live prijs op te halen
-                try:
-                    current_price = _kraken_ticker(symbol)
-                except Exception:
-                    current_price = None
-
-                if current_price is None:
-                    current_price = pos["buy_price"]
-
-                qty = pos["quantity"]
-                market_value = current_price * qty
-                pnl_eur = (current_price - pos["buy_price"]) * qty
-                pnl_pct = (current_price - pos["buy_price"]) / pos["buy_price"] * 100
-
-                pos_list.append({
-                    "symbol": symbol,
-                    "quantity": round(qty, 8),
-                    "buy_price": pos["buy_price"],
-                    "current_price": current_price,
-                    "market_value": round(market_value, 2),
-                    "pnl_eur": round(pnl_eur, 2),
-                    "pnl_pct": round(pnl_pct, 2),
-                    "buy_time": pos.get("buy_time", ""),
-                    "sl_pct": pos.get("sl_pct", 0.05),
-                    "tp_pct": pos.get("tp_pct", 0.10),
-                })
-                total_value += market_value
-
-            result[sid] = {
-                "cash": round(cash, 2),
-                "positions": pos_list,
-                "total_value": round(total_value, 2),
-                "starting_capital": STARTING_CAPITAL,
-                "pnl_total_eur": round(total_value - STARTING_CAPITAL, 2),
-                "pnl_total_pct": round((total_value - STARTING_CAPITAL) / STARTING_CAPITAL * 100, 2),
-            }
-
-        return result
+        return _build_portfolio(self.state, sids)
 
     def reset_bot(self, strategy_id: str) -> dict:
         """Reset een bot naar startkapitaal, liquideer alle posities."""
@@ -275,19 +282,29 @@ class VirtualBankBot:
         return {"status": "ok", "strategy": strategy_id, "cash": STARTING_CAPITAL}
 
 
-def get_portfolio_from_state(data_dir: str = "data") -> dict:
-    """Read-only portfolio uit state file (voor web server, geen Kraken calls)."""
-    state_path = Path(data_dir) / "virtual_bank_state.json"
-    if not state_path.exists():
-        return {}
+def _build_portfolio(state: dict, strategy_ids: list[str]) -> dict:
+    """Bouw portfolio-overzicht met live Kraken prijzen.
 
-    with open(state_path) as f:
-        state = json.load(f)
+    Gedeelde logica voor zowel VirtualBankBot.get_portfolio() als
+    get_portfolio_from_state().
+    """
+    # Verzamel alle unieke symbolen en haal prijzen op in één keer
+    all_symbols = set()
+    for sid in strategy_ids:
+        positions = state.get(sid, {}).get("positions", {})
+        all_symbols.update(positions.keys())
 
-    from nakedtrader.bots.registry import STRATEGIES
+    live_prices = {}
+    for symbol in all_symbols:
+        try:
+            price = _kraken_ticker(symbol)
+            if price is not None:
+                live_prices[symbol] = price
+        except Exception:
+            pass
 
     result = {}
-    for sid in STRATEGIES:
+    for sid in strategy_ids:
         bot_state = state.get(sid, {"cash": STARTING_CAPITAL, "positions": {}})
         cash = bot_state["cash"]
         positions = bot_state.get("positions", {})
@@ -296,16 +313,20 @@ def get_portfolio_from_state(data_dir: str = "data") -> dict:
         total_value = cash
         for symbol, pos in positions.items():
             qty = pos["quantity"]
-            # Gebruik buy_price als fallback (web server doet geen Kraken calls)
-            market_value = pos["buy_price"] * qty
+            buy_price = pos["buy_price"]
+            current_price = live_prices.get(symbol, buy_price)
+            market_value = current_price * qty
+            pnl_eur = (current_price - buy_price) * qty
+            pnl_pct = (current_price - buy_price) / buy_price * 100 if buy_price > 0 else 0.0
+
             pos_list.append({
                 "symbol": symbol,
                 "quantity": round(qty, 8),
-                "buy_price": pos["buy_price"],
-                "current_price": pos["buy_price"],  # approximation
+                "buy_price": buy_price,
+                "current_price": current_price,
                 "market_value": round(market_value, 2),
-                "pnl_eur": 0.0,
-                "pnl_pct": 0.0,
+                "pnl_eur": round(pnl_eur, 2),
+                "pnl_pct": round(pnl_pct, 2),
                 "buy_time": pos.get("buy_time", ""),
                 "sl_pct": pos.get("sl_pct", 0.05),
                 "tp_pct": pos.get("tp_pct", 0.10),
@@ -322,3 +343,16 @@ def get_portfolio_from_state(data_dir: str = "data") -> dict:
         }
 
     return result
+
+
+def get_portfolio_from_state(data_dir: str = "data") -> dict:
+    """Portfolio uit state file met live Kraken prijzen."""
+    state_path = Path(data_dir) / "virtual_bank_state.json"
+    if not state_path.exists():
+        return {}
+
+    with open(state_path) as f:
+        state = json.load(f)
+
+    from nakedtrader.bots.registry import STRATEGIES
+    return _build_portfolio(state, list(STRATEGIES.keys()))

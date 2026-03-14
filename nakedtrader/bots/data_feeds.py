@@ -3,7 +3,7 @@ data_feeds.py — Kraken public API helpers (geen auth nodig).
 
 Functies:
   - _kraken_ohlc(pair, interval, count) -> dict met numpy arrays
-  - _kraken_ticker(pair) -> Optional[float]
+  - _kraken_ticker(pair) -> Optional[float]  (cached, TTL 5s)
   - _kraken_orderbook(pair, count) -> dict met bids/asks
 """
 
@@ -13,7 +13,13 @@ from typing import Optional
 
 import numpy as np
 
+from nakedtrader.exceptions import KrakenError
+
 log = logging.getLogger(__name__)
+
+# ── Ticker cache (pair → (timestamp, price)) ────────────
+_ticker_cache: dict[str, tuple[float, float]] = {}
+_TICKER_TTL = 5.0  # seconden
 
 
 def _kraken_ohlc(pair: str, interval: int = 60, count: int = 200) -> dict:
@@ -27,10 +33,13 @@ def _kraken_ohlc(pair: str, interval: int = 60, count: int = 200) -> dict:
     response = api.query_public("OHLC", {"pair": pair, "interval": interval, "since": since})
     errors = response.get("error", [])
     if errors:
-        log.warning(f"Kraken OHLC fout {pair}: {errors}")
-        return {}
+        raise KrakenError(f"OHLC {pair}: {errors}")
     result = response["result"]
-    ohlc_key = [k for k in result if k != "last"][0]
+    ohlc_keys = [k for k in result if k != "last"]
+    if not ohlc_keys:
+        log.warning("OHLC %s: geen data in response", pair)
+        return {}
+    ohlc_key = ohlc_keys[0]
     rows = result[ohlc_key]
     if not rows:
         return {}
@@ -45,7 +54,12 @@ def _kraken_ohlc(pair: str, interval: int = 60, count: int = 200) -> dict:
 
 
 def _kraken_ticker(pair: str) -> Optional[float]:
-    """Haal laatste prijs op via Kraken public ticker."""
+    """Haal laatste prijs op via Kraken public ticker (cached, TTL 5s)."""
+    now = time.monotonic()
+    cached = _ticker_cache.get(pair)
+    if cached and (now - cached[0]) < _TICKER_TTL:
+        return cached[1]
+
     import krakenex
     api = krakenex.API()
     response = api.query_public("Ticker", {"pair": pair})
@@ -53,8 +67,13 @@ def _kraken_ticker(pair: str) -> Optional[float]:
     if errors:
         return None
     result = response["result"]
+    if not result:
+        log.warning("Ticker %s: lege response", pair)
+        return None
     key = list(result.keys())[0]
-    return float(result[key]["c"][0])  # laatste trade prijs
+    price = float(result[key]["c"][0])  # laatste trade prijs
+    _ticker_cache[pair] = (now, price)
+    return price
 
 
 def _kraken_orderbook(pair: str, count: int = 25) -> dict:
@@ -64,10 +83,11 @@ def _kraken_orderbook(pair: str, count: int = 25) -> dict:
     response = api.query_public("Depth", {"pair": pair, "count": count})
     errors = response.get("error", [])
     if errors:
-        log.warning(f"Kraken orderbook fout {pair}: {errors}")
-        return {"bids": [], "asks": []}
+        raise KrakenError(f"Orderbook {pair}: {errors}")
     result = response["result"]
-    book_key = [k for k in result][0]
+    if not result:
+        raise KrakenError(f"Orderbook {pair}: lege response")
+    book_key = list(result.keys())[0]
     return {
         "bids": result[book_key].get("bids", []),
         "asks": result[book_key].get("asks", []),

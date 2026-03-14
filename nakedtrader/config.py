@@ -59,6 +59,10 @@ class Config:
     macro_risk_interval_min: int = 60
     macro_risk_veto_threshold: float = 0.85
 
+    # ── Ollama AI ────────────────────────────────
+    ollama_enabled: bool = False
+    ollama_url: str = "http://localhost:11434"
+
     # ── Loop ───────────────────────────────────
     interval_seconds: int = 60
 
@@ -106,6 +110,8 @@ def load_config(config_path="config.yml", env_path=".env", project_dir=None) -> 
         macro_risk_enabled=yml.get("macro_risk_enabled", True),
         macro_risk_interval_min=yml.get("macro_risk_interval_min", 60),
         macro_risk_veto_threshold=yml.get("macro_risk_veto_threshold", 0.85),
+        ollama_enabled=yml.get("ollama_enabled", False),
+        ollama_url=yml.get("ollama_url", "http://localhost:11434"),
         interval_seconds=yml.get("interval_seconds", 60),
     )
 

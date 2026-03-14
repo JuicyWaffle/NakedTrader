@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from nakedtrader.types import Transaction, TradeRecord
+from nakedtrader.utils import atomic_write_json
 
 log = logging.getLogger(__name__)
 
@@ -47,14 +48,11 @@ class VirtualLedger:
 
     def _save(self):
         """Schrijf ledger naar disk."""
-        tmp = self._path.with_suffix(".tmp")
-        with open(tmp, "w") as f:
-            json.dump({
-                "transactions": self._transactions,
-                "tx_counter": self._tx_counter,
-                "last_updated": datetime.now().isoformat(),
-            }, f, ensure_ascii=False)
-        tmp.replace(self._path)
+        atomic_write_json(self._path, {
+            "transactions": self._transactions,
+            "tx_counter": self._tx_counter,
+            "last_updated": datetime.now().isoformat(),
+        })
 
     # ── Write API ────────────────────────────────────
 

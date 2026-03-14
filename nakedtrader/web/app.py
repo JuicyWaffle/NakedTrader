@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 """NakedTrader Web Dashboard — lightweight server (stdlib only).
 
-Endpoints:
-  GET /                          → Dashboard (index.html)
-  GET /strategies                → Strategy cards (strategies.html)
-
-  GET /api/charts/intraday       → Trades van vandaag (per-trade detail)
-  GET /api/charts/daily          → Dagelijkse samenvattingen (90 dagen)
-  GET /api/charts/monthly        → Maandelijkse samenvattingen (36 maanden)
-
-  GET /api/performance           → Legacy: overall performance
-  GET /api/bots                  → Bot-lijst
-  GET /api/strategies            → Strategy metadata
-  GET /api/adaptive              → Adaptive engine metrics
+Route handlers zijn gesplitst in nakedtrader.web.handlers.*:
+  - broker.py     — Kraken + IBKR live portfolio
+  - virtual_bank.py — Virtual Bank portfolio + history
+  - orchestrator.py — Pause/resume + execution logs
 """
 
 import json
@@ -20,6 +12,7 @@ import logging
 import socket
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -30,6 +23,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from nakedtrader.config import Config, load_config
 from nakedtrader.performance.store import PerformanceStore
+from nakedtrader.web.handlers import broker as broker_h
+from nakedtrader.web.handlers import virtual_bank as vb_h
+from nakedtrader.web.handlers import orchestrator as orch_h
 
 log = logging.getLogger(__name__)
 
@@ -64,8 +60,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_file(PUBLIC_DIR / "virtual-bank.html", "text/html")
         elif path == "/strategies":
             self._serve_file(PUBLIC_DIR / "strategies.html", "text/html")
+        elif path == "/performance":
+            self._serve_file(PUBLIC_DIR / "performance.html", "text/html")
 
-        # ── New chart API endpoints ───────────────────
+        # ── Chart API ────────────────────────────────
         elif path == "/api/charts/intraday":
             strategy = params.get("strategy", [None])[0]
             self._json(200, _store.get_intraday(strategy_id=strategy))
@@ -80,7 +78,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             strategy = params.get("strategy", [None])[0]
             self._json(200, _store.get_monthly(months=months, strategy_id=strategy))
 
-        # ── Legacy / existing API endpoints ───────────
+        # ── Legacy / metadata ────────────────────────
         elif path == "/api/performance":
             self._json(200, _store.get_performance_json())
 
@@ -99,6 +97,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/money-management":
             self._serve_money_management()
 
+        # ── Virtual Bank ─────────────────────────────
         elif path == "/api/virtual-bank/transactions":
             strategy = params.get("strategy", [None])[0]
             limit = int(params.get("limit", ["20"])[0])
@@ -106,12 +105,68 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(200, {"transactions": txs})
 
         elif path == "/api/virtual-bank/portfolio":
-            self._serve_portfolio()
+            vb_h.serve_portfolio(self, PROJECT_ROOT, _config)
 
+        elif path == "/api/virtual-bank/history":
+            vb_h.serve_history(self, params, PROJECT_ROOT, _config)
+
+        # ── Broker ───────────────────────────────────
+        elif path == "/api/broker/portfolio":
+            broker_h.serve_broker_portfolio(self, PROJECT_ROOT, _config)
+
+        elif path == "/api/broker/history":
+            broker_h.serve_broker_history(self, params, PROJECT_ROOT, _config)
+
+        # ── Performance analysis ─────────────────────
+        elif path == "/api/performance/analysis":
+            self._serve_performance_analysis()
+
+        # ── Orchestrator ─────────────────────────────
+        elif path == "/api/orchestrator/status":
+            orch_h.serve_status(self, PROJECT_ROOT, _config)
+
+        elif path == "/api/orchestrator/executions":
+            orch_id = params.get("orch", ["A"])[0]
+            limit = int(params.get("limit", ["50"])[0])
+            orch_h.serve_executions(self, orch_id, limit, PROJECT_ROOT, _config)
+
+        elif path == "/api/orchestrator/compare":
+            period = params.get("period", [None])[0]
+            since = params.get("since", [None])[0]
+            orch_h.serve_compare(self, period, since, PROJECT_ROOT, _config)
+
+        # ── Static assets ────────────────────────────
         elif path.startswith("/public/"):
             self._serve_file(PUBLIC_DIR / path[len("/public/"):])
         else:
             self._json(404, {"error": "not found"})
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        params = parse_qs(parsed.query)
+
+        if path == "/api/virtual-bank/reset":
+            strategy = params.get("strategy", [None])[0]
+            if not strategy:
+                self._json(400, {"error": "missing strategy parameter"})
+                return
+            vb_h.do_reset(self, strategy, PROJECT_ROOT, _config)
+
+        elif path == "/api/orchestrator/pause":
+            pause_type = params.get("type", [None])[0]
+            strategy_id = params.get("id", [None])[0]
+            orch_h.do_pause(self, pause_type, strategy_id, True, PROJECT_ROOT, _config)
+
+        elif path == "/api/orchestrator/resume":
+            pause_type = params.get("type", [None])[0]
+            strategy_id = params.get("id", [None])[0]
+            orch_h.do_pause(self, pause_type, strategy_id, False, PROJECT_ROOT, _config)
+
+        else:
+            self._json(404, {"error": "not found"})
+
+    # ── Inline handlers (klein genoeg om hier te houden) ──
 
     def _serve_strategies(self):
         try:
@@ -120,20 +175,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             for sid, strategy in STRATEGIES.items():
                 m = strategy.meta
                 result.append({
-                    "id": m.id,
-                    "name": m.name,
-                    "color": m.color,
-                    "description": m.description,
-                    "description_nl": m.description_nl,
-                    "risk_level": m.risk_level,
-                    "risk_score": m.risk_score,
+                    "id": m.id, "name": m.name, "color": m.color,
+                    "description": m.description, "description_nl": m.description_nl,
+                    "risk_level": m.risk_level, "risk_score": m.risk_score,
                     "expected_return_min": m.expected_return_min,
                     "expected_return_max": m.expected_return_max,
-                    "markets": m.markets,
-                    "indicators": m.indicators,
-                    "timeframe": m.timeframe,
-                    "broker": m.broker,
-                    "active": m.active,
+                    "markets": m.markets, "indicators": m.indicators,
+                    "timeframe": m.timeframe, "broker": m.broker, "active": m.active,
                 })
             self._json(200, {"strategies": result})
         except Exception as e:
@@ -159,55 +207,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json(500, {"error": str(e)})
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-        params = parse_qs(parsed.query)
-
-        if path == "/api/virtual-bank/reset":
-            strategy = params.get("strategy", [None])[0]
-            if not strategy:
-                self._json(400, {"error": "missing strategy parameter"})
-                return
-            self._do_reset(strategy)
-        else:
-            self._json(404, {"error": "not found"})
-
-    def _do_reset(self, strategy_id: str):
-        """Reset een bot naar startkapitaal via state file."""
-        try:
-            from nakedtrader.virtual_bank import STARTING_CAPITAL
-            state_path = Path(str(PROJECT_ROOT / _config.data_dir)) / "virtual_bank_state.json"
-            if state_path.exists():
-                with open(state_path) as f:
-                    state = json.load(f)
-            else:
-                state = {}
-
-            state[strategy_id] = {"cash": STARTING_CAPITAL, "positions": {}}
-
-            tmp = state_path.with_suffix(".tmp")
-            with open(tmp, "w") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
-            tmp.replace(state_path)
-
-            self._json(200, {"status": "ok", "strategy": strategy_id, "cash": STARTING_CAPITAL})
-        except Exception as e:
-            self._json(500, {"error": str(e)})
-
-    def _serve_portfolio(self):
-        """Retourneer portfolio overzicht uit virtual_bank_state.json."""
-        try:
-            from nakedtrader.virtual_bank import get_portfolio_from_state
-            data_dir = str(PROJECT_ROOT / _config.data_dir)
-            portfolio = get_portfolio_from_state(data_dir)
-            self._json(200, {"portfolio": portfolio})
-        except Exception as e:
-            self._json(500, {"error": str(e)})
-
     def _serve_money_management(self):
         try:
-            from nakedtrader.money.risk import RiskManager, RiskLimits, DEFAULT_RISK_BUDGETS, DEFAULT_SL_TP_OVERRIDES
+            from nakedtrader.money.risk import DEFAULT_RISK_BUDGETS, DEFAULT_SL_TP_OVERRIDES
             result = {
                 "kelly_fraction": _config.kelly_fraction if _config else 0.5,
                 "max_position_pct": _config.max_position_pct if _config else 0.20,
@@ -225,6 +227,74 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(200, result)
         except Exception as e:
             self._json(500, {"error": str(e)})
+
+    def _serve_performance_analysis(self):
+        """Per-bot analyse: verwacht/effectief trades, rendement, kwalitatieve analyse."""
+        try:
+            from nakedtrader.performance.simulator import STRATEGY_PROFILES
+            from nakedtrader.money.adaptive import AdaptiveEngine
+            from datetime import datetime, timedelta
+
+            state_path = str(PROJECT_ROOT / _config.state_path) if _config else "data/strategy_state.json"
+            adaptive = AdaptiveEngine(state_path)
+
+            daily_data = _store.get_daily(days=90)
+            monthly_data = _store.get_monthly(months=3)
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            bots = {}
+            for sid, profile in STRATEGY_PROFILES.items():
+                tpd_min, tpd_max = profile["trades_per_day"]
+                expected_tpd = round((tpd_min + tpd_max) / 2, 1)
+
+                daily_entries = daily_data.get("strategies", {}).get(sid, [])
+                yesterday_entry = next((d for d in daily_entries if d.get("date") == yesterday), None)
+                actual_yesterday = yesterday_entry["trades_count"] if yesterday_entry else 0
+                ret_1d = yesterday_entry["pnl_pct"] if yesterday_entry else 0.0
+
+                cutoff_1m = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+                ret_1m = sum(d.get("pnl_pct", 0.0) for d in daily_entries if d.get("date", "") >= cutoff_1m)
+
+                cutoff_3m = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+                ret_3m = sum(d.get("pnl_pct", 0.0) for d in daily_entries if d.get("date", "") >= cutoff_3m)
+
+                win_rate = adaptive.get_rolling_win_rate(sid)
+                sharpe = adaptive.get_rolling_sharpe(sid)
+                in_cooldown = adaptive.is_in_cooldown(sid)
+                state = adaptive.get_state(sid)
+                trades_count = len(state.recent_trades) if state else 0
+                consecutive_losses = state.consecutive_losses if state else 0
+
+                analysis = _generate_bot_analysis(
+                    sid, profile, expected_tpd, actual_yesterday,
+                    ret_1d, ret_1m, ret_3m,
+                    win_rate, sharpe, in_cooldown,
+                    trades_count, consecutive_losses,
+                )
+
+                bots[sid] = {
+                    "name": profile["name"],
+                    "timeframe": {"momentum": "1h", "mean-reversion": "15m", "breakout": "4h", "arbitrage": "tick", "trend-follow": "1d"}.get(sid, ""),
+                    "broker": profile["broker"],
+                    "expected_trades_per_day": expected_tpd,
+                    "actual_trades_yesterday": actual_yesterday,
+                    "return_1d": round(ret_1d, 3),
+                    "return_1m": round(ret_1m, 3),
+                    "return_3m": round(ret_3m, 3),
+                    "win_rate": round(win_rate, 3),
+                    "sharpe": round(sharpe, 2),
+                    "in_cooldown": in_cooldown,
+                    "trades_total": trades_count,
+                    "consecutive_losses": consecutive_losses,
+                    "analysis": analysis,
+                }
+
+            self._json(200, {"bots": bots, "date": yesterday})
+        except Exception as e:
+            log.warning("Performance analysis fout: %s", e)
+            self._json(500, {"error": str(e)})
+
+    # ── Utility methods ──────────────────────────────
 
     def _serve_file(self, filepath, content_type=None):
         filepath = Path(filepath)
@@ -258,8 +328,82 @@ class DashboardHandler(BaseHTTPRequestHandler):
         log.info(f"[web] {args[0]}")
 
 
+def _generate_bot_analysis(
+    sid, profile, expected_tpd, actual_yesterday,
+    ret_1d, ret_1m, ret_3m,
+    win_rate, sharpe, in_cooldown,
+    trades_count, consecutive_losses,
+) -> str:
+    """Genereer kwalitatieve analyse tekst per bot."""
+    lines = []
+    bold_lines = []
+
+    base_wr = profile["base_win_rate"]
+
+    if trades_count < 10:
+        lines.append(f"Nog weinig data ({trades_count} trades). Statistieken zijn indicatief.")
+    elif actual_yesterday == 0:
+        lines.append("Gisteren geen trades uitgevoerd.")
+        if expected_tpd >= 5:
+            bold_lines.append("**Signaaldrempels verlagen of marktdata-connectie controleren.**")
+    elif actual_yesterday < expected_tpd * 0.3:
+        lines.append(f"Activiteit laag: {actual_yesterday} trades vs {expected_tpd:.0f} verwacht.")
+        bold_lines.append("**Controleer of signaalcondities niet te streng zijn ingesteld.**")
+    elif actual_yesterday > expected_tpd * 2:
+        lines.append(f"Ongewoon actief: {actual_yesterday} trades (verwacht ~{expected_tpd:.0f}).")
+        bold_lines.append("**Overweeg strengere filters om overtrading te voorkomen.**")
+    else:
+        lines.append(f"Normale activiteit: {actual_yesterday} trades gisteren.")
+
+    if trades_count >= 20:
+        if win_rate >= base_wr + 0.10:
+            lines.append(f"Win rate uitstekend ({win_rate:.0%} vs {base_wr:.0%} verwacht).")
+        elif win_rate >= base_wr - 0.05:
+            lines.append(f"Win rate binnen verwachting ({win_rate:.0%}).")
+        elif win_rate >= base_wr - 0.15:
+            lines.append(f"Win rate onder verwachting ({win_rate:.0%} vs {base_wr:.0%}).")
+            bold_lines.append("**Heroverweeg entry-condities of verhoog minimale win-probability.**")
+        else:
+            lines.append(f"Win rate kritiek laag ({win_rate:.0%}).")
+            bold_lines.append("**Bot pauzeren en strategie-parameters herzien.**")
+
+    if trades_count >= 20:
+        if sharpe >= 2.0:
+            lines.append(f"Sharpe ratio sterk ({sharpe:.2f}).")
+        elif sharpe >= 1.0:
+            lines.append(f"Sharpe ratio voldoende ({sharpe:.2f}).")
+        elif sharpe >= 0:
+            lines.append(f"Sharpe ratio matig ({sharpe:.2f}).")
+            bold_lines.append("**Overweeg striktere stop-losses om risico/rendement te verbeteren.**")
+        else:
+            lines.append(f"Sharpe ratio negatief ({sharpe:.2f}) — strategie verliest per risico-eenheid.")
+            bold_lines.append("**Strategie herparametriseren of tijdelijk deactiveren.**")
+
+    if ret_3m != 0:
+        if ret_3m > 0 and ret_1m > 0:
+            lines.append("Consistent positief rendement over 1 en 3 maanden.")
+        elif ret_3m > 0 and ret_1m <= 0:
+            lines.append("Langetermijn positief maar recente dip.")
+            bold_lines.append("**Marktregime mogelijk veranderd — check macro-condities.**")
+        elif ret_3m < 0 and ret_1m > 0:
+            lines.append("Recent herstel na eerder verliesperiode.")
+        elif ret_3m < 0 and ret_1m <= 0:
+            lines.append("Aanhoudend verlies over 1 en 3 maanden.")
+            bold_lines.append("**Overweeg positiegroottes te halveren tot trend keert.**")
+
+    if in_cooldown:
+        lines.append("Bot is momenteel in cooldown na opeenvolgende verliezen.")
+    elif consecutive_losses >= 3:
+        lines.append(f"Opgelet: {consecutive_losses} opeenvolgende verliezen.")
+
+    text = " ".join(lines)
+    if bold_lines:
+        text += " " + " ".join(bold_lines)
+    return text
+
+
 def _get_bot_list():
-    """Retourneer bot metadata voor legacy /api/bots endpoint."""
+    """Legacy /api/bots endpoint."""
     return [
         {"id": "momentum", "name": "Momentum Rider", "color": "#00ff88"},
         {"id": "mean-reversion", "name": "Mean Reversion", "color": "#0088ff"},
@@ -269,9 +413,10 @@ def _get_bot_list():
     ]
 
 
-class FastHTTPServer(HTTPServer):
-    """HTTPServer die getfqdn() overslaat (kan hangen op macOS)."""
+class FastHTTPServer(ThreadingMixIn, HTTPServer):
+    """Threaded HTTPServer — elke request in een aparte thread, blokkeert niet."""
     allow_reuse_address = True
+    daemon_threads = True
 
     def server_bind(self):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nakedtrader": {
+      "command": "python",
+      "args": ["-m", "fastmcp", "run", "nakedtrader/mcp_server.py"],
+      "cwd": "/Users/openclaw/projects/NakedTrader"
+    }
+  }
+}

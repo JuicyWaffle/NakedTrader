@@ -6,6 +6,7 @@ Dit voorkomt circulaire imports en maakt componenten onafhankelijk.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 
@@ -25,6 +26,7 @@ class TradeSignal:
     current_price: float
     strategy_id: str = ""
     notes: str = ""
+    timestamp: str = ""          # ISO-8601, auto-filled als leeg
 
 
 # ─────────────────────────────────────────────
@@ -140,6 +142,27 @@ class Transaction:
     pnl_eur: float = 0.0           # winst/verlies in EUR (alleen bij sell)
     pnl_pct: float = 0.0           # winst/verlies in % (alleen bij sell)
     trade_id: str = ""             # referentie naar TradeRecord
+
+
+# ─────────────────────────────────────────────
+# EXECUTION REPORT (orchestrator beslissing)
+# ─────────────────────────────────────────────
+
+@dataclass
+class ExecutionReport:
+    """Logboek van elke orchestrator-beslissing per signaal."""
+    timestamp: str                 # ISO-8601
+    signal: dict                   # asdict(TradeSignal) — serializable
+    decision: str                  # "executed" | "blocked" | "modified" | "expired"
+    reason: str                    # mensleesbare redenering
+    rule_triggered: str            # "H1" t/m "U3", "" bij executed
+    risk_score: float              # macro risk score op moment van beslissing
+    drawdown_pct: float            # huidig drawdown percentage
+    total_exposure: float          # totale blootstelling na uitvoering
+    size_original: float           # gevraagde positiegrootte door bot
+    size_executed: float           # werkelijk uitgevoerd (0.0 = geblokkeerd)
+    orchestrator_id: str           # "A" | "B" | "C"
+    mode: str                      # "live" | "paper"
 
 
 # ─────────────────────────────────────────────

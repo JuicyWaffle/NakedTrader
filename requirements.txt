@@ -1,20 +1,25 @@
-# Trading bot — dependencies
+# NakedTrader — dependencies
 # Installeer met: pip install -r requirements.txt
 
-# ── Vereist (altijd) ────────────────────────
-pyyaml>=6.0
-python-dotenv>=1.0
+# ── Core ──────────────────────────────────────
+pyyaml==6.0.3
+python-dotenv==1.2.2
+numpy==2.4.2
+sqlalchemy>=2.0.0
 
-# ── Vereist voor live IBKR ──────────────────
-ib_async>=1.0.0
+# ── Brokers ───────────────────────────────────
+krakenex==2.2.2
+ib_async==2.1.0
 
-# ── Vereist voor live Kraken ────────────────
-krakenex>=2.1.0
+# ── Data analyse ──────────────────────────────
+pandas==3.0.1
 
-# ── Vereist voor live Binance (alternatief) ──
-python-binance>=1.0.19
+# ── Web / API ─────────────────────────────────
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
 
-# ── Dashboard visualisatie ──────────────────
-matplotlib>=3.7
-pandas>=2.0
-numpy>=1.24
+# ── MCP ──────────────────────────────────────
+fastmcp>=3.0.0
+
+# ── Testing ───────────────────────────────────
+pytest==9.0.2

@@ -171,7 +171,18 @@ class MacroRiskEngine:
         credit_spread_threshold:     float = 450.0,
         gdelt_conflict_threshold:    float = -3.0,
         emergency_score:             float = 0.85,
+        ollama_enabled:              bool = False,
     ) -> None:
+        # Laad .env als dat nog niet gebeurd is
+        if not os.getenv("FRED_API_KEY"):
+            from pathlib import Path
+            env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+            if env_path.exists():
+                try:
+                    from dotenv import load_dotenv
+                    load_dotenv(env_path)
+                except ImportError:
+                    pass
         self.fred_api_key                = fred_api_key or os.getenv("FRED_API_KEY", "")
         self.vix_threshold               = vix_threshold
         self.vix_backwardation_threshold = vix_backwardation_threshold
@@ -180,6 +191,7 @@ class MacroRiskEngine:
         self.credit_spread_threshold     = credit_spread_threshold
         self.gdelt_conflict_threshold    = gdelt_conflict_threshold
         self.emergency_score             = emergency_score
+        self.ollama_enabled              = ollama_enabled
 
         self._fred: Optional[object] = None
         if _FRED_AVAILABLE and self.fred_api_key:
@@ -400,7 +412,7 @@ class MacroRiskEngine:
 
         try:
             gold = yf.Ticker("GC=F").history(period="10d")
-            dxy = yf.Ticker("DX-Y.NYB").history(period="10d")
+            dxy = yf.Ticker("DX=F").history(period="10d")
 
             if len(gold) < 5 or len(dxy) < 5:
                 raise ValueError("Onvoldoende gold/dollar data")
@@ -478,10 +490,31 @@ class MacroRiskEngine:
             dq["GDELT"] = True
 
             if avg_goldstein < self.gdelt_conflict_threshold:
-                alerts.append(
+                alert_text = (
                     f"GDELT conflict index verhoogd: Goldstein={avg_goldstein:.1f} "
                     f"({len(conflict_df)} events)"
                 )
+
+                # LLM-verrijking: contextualiseer de GDELT events
+                if self.ollama_enabled:
+                    try:
+                        from nakedtrader.ai.ollama import generate
+                        from nakedtrader.ai.prompts import GDELT_ANALYSIS_SYSTEM
+                        context = (
+                            f"Conflict events: {len(conflict_df)}, "
+                            f"avg Goldstein score: {avg_goldstein:.2f} "
+                            f"(scale: -10=extreme conflict, +10=cooperation)"
+                        )
+                        analysis = generate(
+                            context, task="sentiment",
+                            system=GDELT_ANALYSIS_SYSTEM, max_tokens=200,
+                        )
+                        if analysis:
+                            alert_text += f" — AI: {analysis}"
+                    except Exception as ai_err:
+                        log.debug("GDELT AI verrijking mislukt: %s", ai_err)
+
+                alerts.append(alert_text)
 
         except Exception as e:
             log.warning("GDELT mislukt: %s", e)
@@ -520,13 +553,14 @@ class MacroRiskEngine:
         try:
             tga = self._fred.get_series(
                 self.FRED_SERIES["fed_tga"],
-                observation_start=(datetime.utcnow() - timedelta(days=60)).strftime("%Y-%m-%d"),
+                observation_start=(datetime.utcnow() - timedelta(days=90)).strftime("%Y-%m-%d"),
             )
-            if tga is None or len(tga) < 10:
+            if tga is None or len(tga) < 4:
                 raise ValueError("Onvoldoende TGA data")
 
-            tga_current = float(tga.dropna().iloc[-1])
-            tga_avg = float(tga.dropna().iloc[-10:].mean())
+            tga_clean = tga.dropna()
+            tga_current = float(tga_clean.iloc[-1])
+            tga_avg = float(tga_clean.iloc[-min(10, len(tga_clean)):].mean())
             tga_change = (tga_current - tga_avg) / tga_avg if tga_avg != 0 else 0
             result["fed_liquidity"] = round(min(max(tga_change * 5 + 0.5, 0.0), 1.0), 3)
             result["tga_current_bn"] = round(tga_current / 1e9, 1)

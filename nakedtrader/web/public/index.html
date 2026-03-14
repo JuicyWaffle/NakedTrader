@@ -17,6 +17,7 @@
     --text-dim: #55556a;
     --text-bright: #eeeef8;
     --red: #ff4466;
+    --orange: #ffaa44;
     --mono: 'JetBrains Mono', monospace;
     --sans: 'Space Grotesk', sans-serif;
   }
@@ -44,17 +45,12 @@
   }
 
   header {
-    position: relative;
-    z-index: 1;
+    position: relative; z-index: 1;
     padding: 20px 32px;
     border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    background: rgba(10,10,15,0.9);
-    backdrop-filter: blur(10px);
+    display: flex; align-items: center; gap: 16px;
+    background: rgba(10,10,15,0.9); backdrop-filter: blur(10px);
   }
-
   .logo {
     width: 36px; height: 36px;
     background: var(--accent); border-radius: 8px;
@@ -62,13 +58,11 @@
     font-family: var(--mono); font-weight: 700; color: #000; font-size: 14px;
     flex-shrink: 0; text-decoration: none;
   }
-
   header h1 {
     font-family: var(--mono); font-size: 14px; font-weight: 600;
     color: var(--text-bright); letter-spacing: 0.05em; text-transform: uppercase;
   }
   header p { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
-
   nav { display: flex; gap: 4px; margin-left: auto; margin-right: 16px; }
   nav a {
     font-family: var(--mono); font-size: 11px; text-decoration: none;
@@ -77,7 +71,6 @@
   nav a.active { color: var(--accent); border-color: var(--accent); background: rgba(0,255,136,0.05); }
   nav a:not(.active) { color: var(--text-dim); }
   nav a:not(.active):hover { color: var(--text); border-color: var(--border); }
-
   .status-bar {
     display: flex; align-items: center; gap: 8px;
     font-family: var(--mono); font-size: 11px; color: var(--text-dim);
@@ -101,40 +94,121 @@
     margin-bottom: 10px;
   }
 
-  /* Stats row */
-  .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-  .stat-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
-    padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
-  }
-  .stat-card .bot-name {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.1em;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .stat-card .color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .stat-card .value { font-family: var(--mono); font-size: 22px; font-weight: 700; }
-  .stat-card .value.positive { color: var(--accent); }
-  .stat-card .value.negative { color: var(--red); }
-  .stat-card .sub { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+  /* ── Top row: portfolio totaal + orchestrator ── */
+  .top-row { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
 
-  /* Chart card */
+  .total-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .total-card .tc-top { display: flex; align-items: flex-start; gap: 32px; }
+  .total-card .tc-main { display: flex; flex-direction: column; gap: 4px; }
+  .total-card .tc-label {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim);
+  }
+  .total-card .tc-value {
+    font-family: var(--mono); font-size: 32px; font-weight: 700; color: var(--text-bright);
+  }
+  .total-card .tc-badges { display: flex; gap: 8px; margin-left: auto; align-items: flex-start; }
+  .broker-badge {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 4px 10px; border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .broker-badge.connected { color: var(--accent); border-color: rgba(0,255,136,0.3); background: rgba(0,255,136,0.05); }
+  .broker-badge.disconnected { color: var(--text-dim); border-color: var(--border); }
+
+  /* Positions table inside total card */
+  .pos-table {
+    width: 100%; border-collapse: collapse;
+    border-top: 1px solid var(--border); padding-top: 4px;
+  }
+  .pos-table th {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim);
+    text-align: left; padding: 8px 6px 4px;
+  }
+  .pos-table th:last-child, .pos-table td:last-child { text-align: right; }
+  .pos-table td {
+    font-family: var(--mono); font-size: 11px; padding: 5px 6px;
+    color: var(--text); border-top: 1px solid rgba(30,30,46,0.5);
+  }
+  .pos-table .asset-name { color: var(--text-bright); font-weight: 600; }
+  .pos-table .cash-row td { color: var(--text-dim); }
+  .positive { color: var(--accent); }
+  .negative { color: var(--red); }
+
+  /* ── Orchestrator control card ── */
+  .orch-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 24px; display: flex; flex-direction: column; gap: 16px;
+  }
+  .orch-card .oc-title {
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim);
+  }
+  .orch-card .oc-desc {
+    font-family: var(--mono); font-size: 9px; color: var(--text-dim); margin-top: -10px;
+    line-height: 1.4;
+  }
+  .orch-card .oc-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .orch-card .oc-label {
+    font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-bright);
+  }
+  .orch-card .oc-sublabel {
+    font-family: var(--mono); font-size: 9px; color: var(--text-dim); margin-top: 1px;
+  }
+  .orch-card .oc-status-label {
+    font-family: var(--mono); font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin-right: 10px;
+  }
+  .orch-card .oc-status-label.on { color: var(--accent); }
+  .orch-card .oc-status-label.off { color: var(--red); }
+
+  /* Toggle switch */
+  .toggle {
+    position: relative; width: 48px; height: 26px; cursor: pointer;
+    background: rgba(255,68,102,0.1); border-radius: 13px; border: 1px solid rgba(255,68,102,0.3);
+    transition: all 0.3s; flex-shrink: 0;
+  }
+  .toggle.active { background: rgba(0,255,136,0.12); border-color: rgba(0,255,136,0.4); }
+  .toggle::after {
+    content: '';
+    position: absolute; top: 3px; left: 3px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--red); transition: all 0.3s;
+  }
+  .toggle.active::after {
+    left: 25px; background: var(--accent);
+    box-shadow: 0 0 8px rgba(0,255,136,0.4);
+  }
+
+  .orch-card .oc-stats {
+    display: flex; gap: 12px;
+    border-top: 1px solid var(--border); padding-top: 12px; margin-top: auto;
+  }
+  .orch-card .oc-stat {
+    font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+  }
+  .orch-card .oc-stat b { color: var(--text); font-weight: 600; }
+
+  /* ── Chart card ── */
   .chart-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
     padding: 20px; position: relative;
   }
-  .chart-card canvas { width: 100% !important; max-height: 420px; }
-
+  .chart-card canvas { width: 100% !important; max-height: 380px; }
   .chart-header {
     display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
   }
   .chart-title { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-bright); }
   .chart-subtitle { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
-
-  /* Timeframe tabs */
-  .tf-tabs {
-    display: flex; gap: 4px;
-  }
+  .tf-tabs { display: flex; gap: 4px; }
   .tf-tab {
     font-family: var(--mono); font-size: 11px; font-weight: 600;
     padding: 6px 16px; border-radius: 6px; cursor: pointer;
@@ -142,28 +216,13 @@
     background: transparent; transition: all 0.2s;
   }
   .tf-tab:hover { color: var(--text); border-color: #2a2a3e; }
-  .tf-tab.active {
-    color: var(--accent); border-color: var(--accent);
-    background: rgba(0,255,136,0.05);
-  }
+  .tf-tab.active { color: var(--accent); border-color: var(--accent); background: rgba(0,255,136,0.05); }
 
-  /* Placeholder rows */
-  .placeholder-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-
-  /* Health grid */
-  .health-card {
-    background: #0d0d14; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+  @media (max-width: 1100px) {
+    .top-row { grid-template-columns: 1fr; }
+    .total-card .tc-top { flex-wrap: wrap; }
+    .total-card .tc-badges { margin-left: 0; }
   }
-  .health-card .hname {
-    font-family: var(--mono); font-size: 10px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;
-  }
-  .health-card .hrow {
-    display: flex; justify-content: space-between; margin-bottom: 4px;
-    font-family: var(--mono); font-size: 10px;
-  }
-  .health-card .hrow .hl { color: var(--text-dim); }
-  .health-card .hrow .hv { font-size: 11px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -172,12 +231,13 @@
   <a href="/" class="logo">NT</a>
   <div>
     <h1>NakedTrader</h1>
-    <p>Bot Performance Dashboard</p>
+    <p>Portfolio Dashboard</p>
   </div>
   <nav>
     <a href="/" class="active">Dashboard</a>
     <a href="/virtual-bank">Virtual Bank</a>
     <a href="/strategies">Strategieen</a>
+    <a href="/performance">Performance</a>
   </nav>
   <div class="status-bar">
     <div class="status-dot"></div>
@@ -187,81 +247,122 @@
 
 <main>
 
-  <!-- Bot stats -->
-  <div>
-    <div class="section-label">Huidige performance per bot</div>
-    <div class="stats-row" id="stats-row"></div>
+  <!-- Top row: portfolio + orchestrator -->
+  <div class="top-row">
+    <div class="total-card" id="total-card">
+      <div class="tc-top">
+        <div class="tc-main">
+          <div class="tc-label">Totale portfoliowaarde</div>
+          <div class="tc-value" id="tc-value">--</div>
+        </div>
+        <div class="tc-badges" id="tc-badges"></div>
+      </div>
+      <table class="pos-table" id="pos-table">
+        <thead><tr><th>Asset</th><th>Hoeveelheid</th><th>Prijs</th><th>Waarde</th></tr></thead>
+        <tbody id="pos-body"></tbody>
+      </table>
+    </div>
+
+    <div class="orch-card" id="orch-card">
+      <div class="oc-title">Orchestrator</div>
+      <div class="oc-desc">Bepaalt of bot-signalen daadwerkelijk uitgevoerd worden op Kraken / IBKR</div>
+      <div class="oc-row">
+        <div>
+          <div class="oc-label">Aankopen</div>
+          <div class="oc-sublabel">Nieuwe posities openen op brokers</div>
+        </div>
+        <div style="display:flex;align-items:center">
+          <span class="oc-status-label on" id="buys-label">ACTIEF</span>
+          <div class="toggle active" id="toggle-buys" onclick="toggleOrch('buys')"></div>
+        </div>
+      </div>
+      <div class="oc-row">
+        <div>
+          <div class="oc-label">Verkopen</div>
+          <div class="oc-sublabel">Posities sluiten op brokers</div>
+        </div>
+        <div style="display:flex;align-items:center">
+          <span class="oc-status-label on" id="sells-label">ACTIEF</span>
+          <div class="toggle active" id="toggle-sells" onclick="toggleOrch('sells')"></div>
+        </div>
+      </div>
+      <div class="oc-stats" id="oc-stats">
+        <div class="oc-stat">A (live): <b id="oc-a">0/0</b></div>
+        <div class="oc-stat">B (shadow): <b id="oc-b">0/0</b></div>
+        <div class="oc-stat">C (shadow): <b id="oc-c">0/0</b></div>
+      </div>
+    </div>
   </div>
 
   <!-- Main chart with timeframe tabs -->
   <div>
-    <div class="section-label">Rendement over tijd</div>
+    <div class="section-label">Evolutie</div>
     <div class="chart-card">
       <div class="chart-header">
         <div>
-          <div class="chart-title" id="chart-title">Cumulatief rendement (%)</div>
-          <div class="chart-subtitle" id="chart-subtitle">Dagelijkse performance — laatste 90 dagen</div>
+          <div class="chart-title" id="chart-title">Portfolio waarde</div>
+          <div class="chart-subtitle" id="chart-subtitle">Laatste 7 dagen — live snapshots</div>
         </div>
         <div class="tf-tabs">
-          <button class="tf-tab" data-tf="intraday" onclick="switchTab('intraday')">Intraday</button>
-          <button class="tf-tab active" data-tf="daily" onclick="switchTab('daily')">90 Dagen</button>
-          <button class="tf-tab" data-tf="monthly" onclick="switchTab('monthly')">36 Maanden</button>
+          <button class="tf-tab" data-tf="24h" onclick="switchTab('24h')">24u</button>
+          <button class="tf-tab active" data-tf="7d" onclick="switchTab('7d')">7d</button>
+          <button class="tf-tab" data-tf="30d" onclick="switchTab('30d')">30d</button>
+          <button class="tf-tab" data-tf="all" onclick="switchTab('all')">Alles</button>
         </div>
       </div>
       <canvas id="mainChart"></canvas>
     </div>
   </div>
 
-  <!-- Drawdown -->
-  <div>
-    <div class="section-label">Drawdown</div>
-    <div class="chart-card">
-      <div class="chart-header">
-        <div>
-          <div class="chart-title">Portfolio Drawdown (%)</div>
-          <div class="chart-subtitle">Afstand tot peak — rode lijn = 15% limiet</div>
-        </div>
-      </div>
-      <canvas id="drawdownChart"></canvas>
-    </div>
-  </div>
-
-  <!-- Strategy Health -->
-  <div>
-    <div class="section-label">Strategy Health</div>
-    <div class="chart-card">
-      <div class="chart-header">
-        <div>
-          <div class="chart-title">Adaptive Metrics per Strategie</div>
-          <div class="chart-subtitle">Win rate, Sharpe ratio, cooldown status</div>
-        </div>
-      </div>
-      <div id="health-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:8px 0"></div>
-    </div>
-  </div>
-
 </main>
 
 <script>
-/* ── State ── */
 const BOT_COLORS = {
-  'momentum': '#00ff88',
-  'mean-reversion': '#0088ff',
-  'breakout': '#ff4466',
-  'trend-follow': '#ffaa44',
-  'arbitrage': '#aa44ff',
+  'momentum': '#00ff88', 'mean-reversion': '#0088ff', 'breakout': '#ff4466',
+  'trend-follow': '#ffaa44', 'arbitrage': '#aa44ff',
 };
 const BOT_NAMES = {
-  'momentum': 'Momentum Rider',
-  'mean-reversion': 'Mean Reversion',
-  'breakout': 'Breakout Hunter',
-  'trend-follow': 'Macro Trend',
-  'arbitrage': 'Crypto Scalper',
+  'momentum': 'Momentum Rider', 'mean-reversion': 'Mean Reversion', 'breakout': 'Breakout Hunter',
+  'trend-follow': 'Macro Trend', 'arbitrage': 'Crypto Scalper',
+};
+const ASSET_NAMES = {
+  'XXBT': 'Bitcoin', 'XETH': 'Ethereum', 'SOL': 'Solana', 'ADA': 'Cardano',
+  'USDC': 'USDC', 'STRK': 'Starknet', 'PAXG': 'PAX Gold',
+  'ZEUR': 'Euro', 'ZUSD': 'US Dollar',
 };
 
 let mainChart = null;
-let ddChart = null;
-let currentTab = 'daily';
+let currentTab = '7d';
+
+/* ── Orchestrator toggle ── */
+async function toggleOrch(type) {
+  const el = document.getElementById('toggle-' + type);
+  const isActive = el.classList.contains('active');
+  const action = isActive ? 'pause' : 'resume';
+  try {
+    const res = await fetch('/api/orchestrator/' + action + '?type=' + type, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      updateToggleUI(type, !isActive);
+    }
+  } catch (e) {
+    console.error('Toggle error:', e);
+  }
+}
+
+function updateToggleUI(type, active) {
+  const toggle = document.getElementById('toggle-' + type);
+  const label = document.getElementById(type + '-label');
+  if (active) {
+    toggle.classList.add('active');
+    label.textContent = 'ACTIEF';
+    label.className = 'oc-status-label on';
+  } else {
+    toggle.classList.remove('active');
+    label.textContent = 'PAUZE';
+    label.className = 'oc-status-label off';
+  }
+}
 
 /* ── Tab switching ── */
 function switchTab(tab) {
@@ -269,141 +370,202 @@ function switchTab(tab) {
   document.querySelectorAll('.tf-tab').forEach(el => {
     el.classList.toggle('active', el.dataset.tf === tab);
   });
-
   const titles = {
-    intraday: ['Trades vandaag', 'Per-trade PnL — vandaag'],
-    daily: ['Cumulatief rendement (%)', 'Dagelijkse performance — laatste 90 dagen'],
-    monthly: ['Cumulatief rendement (%)', 'Maandelijkse performance — laatste 36 maanden'],
+    '24h': ['Portfolio waarde', 'Laatste 24 uur — live snapshots'],
+    '7d': ['Portfolio waarde', 'Laatste 7 dagen — live snapshots'],
+    '30d': ['Portfolio waarde', 'Laatste 30 dagen — live snapshots'],
+    'all': ['Portfolio waarde', 'Alle beschikbare data — live snapshots'],
   };
   document.getElementById('chart-title').textContent = titles[tab][0];
   document.getElementById('chart-subtitle').textContent = titles[tab][1];
-
   loadChart(tab);
 }
 
-/* ── Data loading ── */
+/* ── Load data ── */
 async function loadChart(tab) {
   try {
-    if (tab === 'intraday') {
-      const res = await fetch('/api/charts/intraday');
-      const data = await res.json();
-      renderIntradayChart(data);
-    } else if (tab === 'daily') {
-      const res = await fetch('/api/charts/daily?days=90');
-      const data = await res.json();
-      renderDailyChart(data);
-    } else {
-      const res = await fetch('/api/charts/monthly?months=36');
-      const data = await res.json();
-      renderMonthlyChart(data);
-    }
-  } catch (e) {
-    console.error('Chart load error:', e);
-  }
+    const hoursMap = { '24h': 24, '7d': 168, '30d': 720, 'all': 0 };
+    const hours = hoursMap[tab] || 0;
+    const url = '/api/broker/history' + (hours ? '?hours=' + hours : '');
+    const res = await fetch(url);
+    const data = await res.json();
+    renderBrokerHistoryChart(data);
+  } catch (e) { console.error('Chart error:', e); }
 }
 
 async function loadDashboard() {
   try {
-    const [dailyRes, monthlyRes, adaptRes] = await Promise.all([
-      fetch('/api/charts/daily?days=90'),
-      fetch('/api/charts/monthly?months=36'),
-      fetch('/api/adaptive').catch(() => ({ ok: false })),
+    const [brokerRes, orchRes] = await Promise.all([
+      fetch('/api/broker/portfolio').catch(() => ({ ok: false })),
+      fetch('/api/orchestrator/status').catch(() => ({ ok: false })),
     ]);
 
-    const dailyData = await dailyRes.json();
-    const monthlyData = await monthlyRes.json();
-    let adaptive = {};
-    try { if (adaptRes.ok) adaptive = (await adaptRes.json()).adaptive || {}; } catch(e) {}
+    let broker = {};
+    try { if (brokerRes.ok) broker = await brokerRes.json(); } catch(e) {}
 
-    renderStats(monthlyData);
-    renderDrawdown(dailyData);
-    renderHealth(adaptive);
+    let orchStatus = {};
+    try { if (orchRes.ok) orchStatus = await orchRes.json(); } catch(e) {}
+
+    renderBrokerPortfolio(broker);
+    renderOrchStatus(orchStatus);
     loadChart(currentTab);
 
     document.getElementById('last-update').textContent =
       'update: ' + new Date().toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'});
   } catch (e) {
-    console.error('Dashboard load error:', e);
+    console.error('Dashboard error:', e);
   }
 }
 
-/* ── Stats row ── */
-function renderStats(monthlyData) {
-  const container = document.getElementById('stats-row');
-  container.innerHTML = '';
+/* ── Broker portfolio ── */
+function renderBrokerPortfolio(data) {
+  const totalEur = data.total_eur || 0;
+  document.getElementById('tc-value').textContent =
+    '\u20AC' + totalEur.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const strategies = monthlyData.strategies || {};
+  // Broker badges
+  const badges = document.getElementById('tc-badges');
+  const krakenOk = data.kraken && data.kraken.total_eur > 0;
+  const ibkrOk = data.ibkr && data.ibkr.connected;
+  badges.innerHTML = `
+    <span class="broker-badge ${krakenOk ? 'connected' : 'disconnected'}">Kraken${krakenOk ? ' \u20AC' + data.kraken.total_eur.toFixed(0) : ''}</span>
+    <span class="broker-badge ${ibkrOk ? 'connected' : 'disconnected'}">IBKR${ibkrOk ? ' \u20AC' + data.ibkr.total_eur.toFixed(0) : ''}</span>
+  `;
 
-  Object.keys(BOT_NAMES).forEach(sid => {
-    const data = strategies[sid] || [];
-    const last = data.length > 0 ? data[data.length - 1] : null;
-    const cumPct = last ? last.cumulative_pct : 0;
-    const monthPnl = last ? last.pnl_pct : 0;
-    const sign = cumPct >= 0 ? '+' : '';
-    const cls = cumPct >= 0 ? 'positive' : 'negative';
+  // Positions table
+  const body = document.getElementById('pos-body');
+  body.innerHTML = '';
 
-    const card = document.createElement('div');
-    card.className = 'stat-card';
-    card.innerHTML = `
-      <div class="bot-name">
-        <span class="color-dot" style="background:${BOT_COLORS[sid]}"></span>
-        ${esc(BOT_NAMES[sid])}
-      </div>
-      <div class="value ${cls}">${sign}${cumPct.toFixed(1)}%</div>
-      <div class="sub">Laatste maand: ${monthPnl >= 0 ? '+' : ''}${monthPnl.toFixed(1)}%</div>
-    `;
-    container.appendChild(card);
-  });
+  if (data.kraken) {
+    const kr = data.kraken;
+
+    // Asset positions
+    (kr.positions || []).forEach(pos => {
+      if (pos.value_eur < 0.01) return;
+      const name = ASSET_NAMES[pos.asset] || pos.asset;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="asset-name">${esc(name)}<span style="color:var(--text-dim);font-size:9px;margin-left:6px">${esc(pos.asset)}</span></td>
+        <td>${formatQty(pos.quantity)}</td>
+        <td>\u20AC${pos.price_eur.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+        <td>\u20AC${pos.value_eur.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      `;
+      body.appendChild(tr);
+    });
+
+    // Cash row
+    if (kr.cash_eur > 0.01) {
+      const tr = document.createElement('tr');
+      tr.className = 'cash-row';
+      tr.innerHTML = `
+        <td>Cash</td>
+        <td></td>
+        <td></td>
+        <td>\u20AC${kr.cash_eur.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2})}</td>
+      `;
+      body.appendChild(tr);
+    }
+  }
+
+  if (data.ibkr && data.ibkr.connected) {
+    (data.ibkr.positions || []).forEach(pos => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="asset-name">${esc(pos.symbol)}<span style="color:var(--text-dim);font-size:9px;margin-left:6px">IBKR</span></td>
+        <td>${pos.quantity}</td>
+        <td>\u20AC${(pos.price_eur || 0).toFixed(2)}</td>
+        <td>\u20AC${(pos.value_eur || 0).toFixed(2)}</td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+
+  if (body.children.length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="4" style="color:var(--text-dim);padding:12px 6px">Geen posities gevonden</td>';
+    body.appendChild(tr);
+  }
 }
 
-/* ── Intraday chart ── */
-function renderIntradayChart(data) {
-  const ctx = document.getElementById('mainChart').getContext('2d');
-  const trades = data.trades || [];
+/* ── Orchestrator status ── */
+function renderOrchStatus(status) {
+  const pause = status.pause_state || {};
+  const stats = status.execution_stats || {};
 
-  if (trades.length === 0) {
+  updateToggleUI('buys', !pause.paused_buys);
+  updateToggleUI('sells', !pause.paused_sells);
+
+  const fmt = s => (s.executed || 0) + '/' + (s.total || 0);
+  document.getElementById('oc-a').textContent = fmt(stats['A'] || {});
+  document.getElementById('oc-b').textContent = fmt(stats['B'] || {});
+  document.getElementById('oc-c').textContent = fmt(stats['C'] || {});
+}
+
+/* ── Broker history chart ── */
+function renderBrokerHistoryChart(data) {
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  const snapshots = data.snapshots || [];
+
+  if (snapshots.length === 0) {
     destroyMainChart();
     mainChart = new Chart(ctx, {
       type: 'bar',
-      data: { labels: ['Geen trades vandaag'], datasets: [{ data: [0], backgroundColor: '#1e1e2e' }] },
+      data: { labels: ['Nog geen snapshots — dashboard laadt automatisch bij'], datasets: [{ data: [0], backgroundColor: '#1e1e2e' }] },
       options: { responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false } },
-        scales: { y: { display: false }, x: { ticks: { color: '#55556a', font: { family: "'JetBrains Mono'", size: 12 } } } },
+        scales: { y: { display: false }, x: { ticks: { color: '#55556a', font: monoFont(11) } } },
       },
     });
     return;
   }
 
-  // Group by strategy, plot as bar chart
-  const byStrategy = {};
-  trades.forEach(t => {
-    if (!byStrategy[t.strategy_id]) byStrategy[t.strategy_id] = [];
-    byStrategy[t.strategy_id].push(t);
+  const labels = snapshots.map(s => {
+    const ts = s.timestamp || '';
+    if (currentTab === '24h') return ts.slice(11, 16);
+    if (currentTab === '7d') return ts.slice(5, 10) + ' ' + ts.slice(11, 16);
+    return ts.slice(0, 10);
   });
 
-  const labels = trades.map(t => {
-    const time = t.time.includes('T') ? t.time.split('T')[1].substring(0, 5) : t.time.substring(0, 5);
-    return time;
-  });
-
-  const datasets = Object.keys(byStrategy).map(sid => ({
-    label: BOT_NAMES[sid] || sid,
-    data: trades.map(t => t.strategy_id === sid ? t.pnl_eur : null),
-    backgroundColor: trades.map(t =>
-      t.strategy_id === sid ? (t.outcome === 'win' ? BOT_COLORS[sid] + 'cc' : '#ff446688') : 'transparent'
-    ),
-    borderColor: BOT_COLORS[sid] || '#888',
-    borderWidth: 1,
-    borderRadius: 3,
-    skipNull: true,
-  }));
+  const datasets = [
+    {
+      label: 'Totaal',
+      data: snapshots.map(s => s.total_eur || 0),
+      borderColor: '#eeeef8',
+      backgroundColor: 'rgba(238,238,248,0.06)',
+      borderWidth: 2.5,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      tension: 0.3,
+      fill: true,
+    },
+    {
+      label: 'Kraken',
+      data: snapshots.map(s => s.kraken_eur || 0),
+      borderColor: '#00ff88',
+      backgroundColor: 'rgba(0,255,136,0.05)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: false,
+    },
+    {
+      label: 'IBKR',
+      data: snapshots.map(s => s.ibkr_eur || 0),
+      borderColor: '#0088ff',
+      backgroundColor: 'rgba(0,136,255,0.05)',
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+      fill: false,
+    },
+  ];
 
   destroyMainChart();
   mainChart = new Chart(ctx, {
-    type: 'bar',
-    data: { labels, datasets },
+    type: 'line', data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { position: 'top', labels: chartLegendStyle() },
         tooltip: { ...chartTooltipStyle(),
@@ -411,268 +573,38 @@ function renderIntradayChart(data) {
             label: ctx => {
               const v = ctx.parsed.y;
               if (v == null) return '';
-              return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v.toFixed(2)} EUR`;
+              return ` ${ctx.dataset.label}: \u20AC${v.toLocaleString('nl-NL', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
             },
           },
         },
       },
       scales: {
-        x: { ticks: { color: '#55556a', font: monoFont(10) }, grid: { color: 'rgba(30,30,46,0.5)' } },
-        y: {
-          ticks: { color: '#55556a', font: monoFont(10),
-            callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + ' EUR',
-          },
-          grid: { color: 'rgba(30,30,46,0.5)' },
-        },
+        x: { ticks: { color: '#55556a', font: monoFont(10), maxRotation: 45, maxTicksLimit: 20 }, grid: { color: 'rgba(30,30,46,0.5)' } },
+        y: { ticks: { color: '#55556a', font: monoFont(10), callback: v => '\u20AC' + v.toFixed(0) }, grid: { color: 'rgba(30,30,46,0.5)' } },
       },
     },
-  });
-}
-
-/* ── Daily chart (90 dagen) ── */
-function renderDailyChart(data) {
-  const ctx = document.getElementById('mainChart').getContext('2d');
-  const strategies = data.strategies || {};
-
-  // Verzamel alle unieke datums
-  const allDates = new Set();
-  Object.values(strategies).forEach(days => days.forEach(d => allDates.add(d.date)));
-  const labels = [...allDates].sort();
-
-  const datasets = Object.keys(BOT_NAMES).filter(sid => strategies[sid]).map(sid => {
-    const dayMap = {};
-    (strategies[sid] || []).forEach(d => { dayMap[d.date] = d.cumulative_pct; });
-    return {
-      label: BOT_NAMES[sid],
-      data: labels.map(date => dayMap[date] ?? null),
-      borderColor: BOT_COLORS[sid],
-      backgroundColor: BOT_COLORS[sid] + '15',
-      borderWidth: 2,
-      pointRadius: 0,
-      pointHoverRadius: 5,
-      tension: 0.3,
-      fill: false,
-      spanGaps: true,
-    };
-  });
-
-  destroyMainChart();
-  mainChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { position: 'top', labels: chartLegendStyle() },
-        tooltip: { ...chartTooltipStyle(),
-          callbacks: {
-            label: ctx => {
-              const v = ctx.parsed.y;
-              return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { color: '#55556a', font: monoFont(10), maxRotation: 45, maxTicksLimit: 15 },
-          grid: { color: 'rgba(30,30,46,0.5)' },
-        },
-        y: {
-          ticks: { color: '#55556a', font: monoFont(10),
-            callback: v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%',
-          },
-          grid: { color: 'rgba(30,30,46,0.5)' },
-        },
-      },
-    },
-  });
-}
-
-/* ── Monthly chart (36 maanden) ── */
-function renderMonthlyChart(data) {
-  const ctx = document.getElementById('mainChart').getContext('2d');
-  const strategies = data.strategies || {};
-
-  const allMonths = new Set();
-  Object.values(strategies).forEach(months => months.forEach(m => allMonths.add(m.month)));
-  const labels = [...allMonths].sort();
-
-  const datasets = Object.keys(BOT_NAMES).filter(sid => strategies[sid]).map(sid => {
-    const monthMap = {};
-    (strategies[sid] || []).forEach(m => { monthMap[m.month] = m.cumulative_pct; });
-    return {
-      label: BOT_NAMES[sid],
-      data: labels.map(month => monthMap[month] ?? null),
-      borderColor: BOT_COLORS[sid],
-      backgroundColor: BOT_COLORS[sid] + '15',
-      borderWidth: 2,
-      pointRadius: 3,
-      pointHoverRadius: 6,
-      pointBackgroundColor: BOT_COLORS[sid],
-      tension: 0.3,
-      fill: false,
-      spanGaps: true,
-    };
-  });
-
-  destroyMainChart();
-  mainChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { position: 'top', labels: chartLegendStyle() },
-        tooltip: { ...chartTooltipStyle(),
-          callbacks: {
-            label: ctx => {
-              const v = ctx.parsed.y;
-              return ` ${ctx.dataset.label}: ${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: { color: '#55556a', font: monoFont(10), maxTicksLimit: 18 },
-          grid: { color: 'rgba(30,30,46,0.5)' },
-        },
-        y: {
-          ticks: { color: '#55556a', font: monoFont(10),
-            callback: v => (v >= 0 ? '+' : '') + v.toFixed(0) + '%',
-          },
-          grid: { color: 'rgba(30,30,46,0.5)' },
-        },
-      },
-    },
-  });
-}
-
-/* ── Drawdown chart ── */
-function renderDrawdown(dailyData) {
-  const ctx = document.getElementById('drawdownChart').getContext('2d');
-  const strategies = dailyData.strategies || {};
-
-  // Collect all dates
-  const allDates = new Set();
-  Object.values(strategies).forEach(days => days.forEach(d => allDates.add(d.date)));
-  const labels = [...allDates].sort();
-
-  const datasets = Object.keys(BOT_NAMES).filter(sid => strategies[sid]).map(sid => {
-    const dayMap = {};
-    (strategies[sid] || []).forEach(d => { dayMap[d.date] = d.cumulative_pct; });
-
-    let peak = 0;
-    const dd = labels.map(date => {
-      const val = dayMap[date];
-      if (val == null) return null;
-      if (val > peak) peak = val;
-      return peak > 0 ? -((peak - val) / Math.max(peak, 1)) * 100 : 0;
-    });
-    return {
-      label: BOT_NAMES[sid],
-      data: dd,
-      borderColor: BOT_COLORS[sid],
-      backgroundColor: BOT_COLORS[sid] + '20',
-      borderWidth: 1.5,
-      pointRadius: 0,
-      tension: 0.3,
-      fill: true,
-      spanGaps: true,
-    };
-  });
-
-  // -15% limit
-  datasets.push({
-    label: 'Limiet (-15%)',
-    data: labels.map(() => -15),
-    borderColor: '#ff4466',
-    borderWidth: 1,
-    borderDash: [6, 3],
-    pointRadius: 0,
-    fill: false,
-  });
-
-  if (ddChart) { ddChart.destroy(); ddChart = null; }
-  ddChart = new Chart(ctx, {
-    type: 'line',
-    data: { labels, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'top', labels: chartLegendStyle() },
-      },
-      scales: {
-        x: { ticks: { color: '#55556a', font: monoFont(10), maxRotation: 45, maxTicksLimit: 15 }, grid: { color: 'rgba(30,30,46,0.5)' } },
-        y: {
-          ticks: { color: '#55556a', font: monoFont(10), callback: v => v.toFixed(1) + '%' },
-          grid: { color: 'rgba(30,30,46,0.5)' },
-          max: 2,
-        },
-      },
-    },
-  });
-}
-
-/* ── Health grid ── */
-function renderHealth(adaptive) {
-  const grid = document.getElementById('health-grid');
-  grid.innerHTML = '';
-
-  Object.keys(BOT_NAMES).forEach(sid => {
-    const a = adaptive[sid];
-    const el = document.createElement('div');
-    el.className = 'health-card';
-
-    if (!a) {
-      el.innerHTML = `
-        <div class="hname" style="color:${BOT_COLORS[sid]}">${esc(BOT_NAMES[sid])}</div>
-        <div style="font-family:var(--mono);font-size:11px;color:#55556a">Wacht op trades...</div>
-      `;
-      grid.appendChild(el);
-      return;
-    }
-
-    const wr = (a.rolling_win_rate * 100).toFixed(1);
-    const sh = a.rolling_sharpe.toFixed(2);
-    const wrC = a.rolling_win_rate >= 0.55 ? '#00ff88' : a.rolling_win_rate >= 0.45 ? '#c8c8d8' : '#ff4466';
-    const shC = a.rolling_sharpe >= 1.0 ? '#00ff88' : a.rolling_sharpe >= 0 ? '#c8c8d8' : '#ff4466';
-    const status = a.in_cooldown
-      ? '<span style="color:#ff4466;font-size:9px;font-family:var(--mono)">COOLDOWN</span>'
-      : '<span style="color:#00ff88;font-size:9px;font-family:var(--mono)">OK</span>';
-
-    el.innerHTML = `
-      <div class="hname" style="color:${BOT_COLORS[sid]}">${esc(BOT_NAMES[sid])}</div>
-      <div class="hrow"><span class="hl">Win Rate</span><span class="hv" style="color:${wrC}">${wr}%</span></div>
-      <div class="hrow"><span class="hl">Sharpe</span><span class="hv" style="color:${shC}">${sh}</span></div>
-      <div class="hrow"><span class="hl">Trades</span><span class="hv" style="color:var(--text)">${a.trades_count}</span></div>
-      <div class="hrow"><span class="hl">Status</span>${status}</div>
-    `;
-    grid.appendChild(el);
   });
 }
 
 /* ── Helpers ── */
 function destroyMainChart() { if (mainChart) { mainChart.destroy(); mainChart = null; } }
 function monoFont(size) { return { family: "'JetBrains Mono', monospace", size }; }
-function chartLegendStyle() {
-  return { color: '#c8c8d8', font: monoFont(11), usePointStyle: true, pointStyle: 'circle', padding: 16 };
-}
+function chartLegendStyle() { return { color: '#c8c8d8', font: monoFont(11), usePointStyle: true, pointStyle: 'circle', padding: 16 }; }
 function chartTooltipStyle() {
-  return {
-    backgroundColor: '#111118', borderColor: '#1e1e2e', borderWidth: 1,
-    titleFont: monoFont(11), bodyFont: monoFont(11),
-    titleColor: '#eeeef8', bodyColor: '#c8c8d8', padding: 10,
-  };
+  return { backgroundColor: '#111118', borderColor: '#1e1e2e', borderWidth: 1,
+    titleFont: monoFont(11), bodyFont: monoFont(11), titleColor: '#eeeef8', bodyColor: '#c8c8d8', padding: 10 };
 }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function formatQty(q) {
+  if (q >= 100) return q.toFixed(0);
+  if (q >= 1) return q.toFixed(4);
+  if (q >= 0.01) return q.toFixed(6);
+  return q.toFixed(8);
+}
 
 /* ── Init ── */
 loadDashboard();
-setInterval(loadDashboard, 60000);
+setInterval(loadDashboard, 30000);
 </script>
 </body>
 </html>

@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NakedTrader — Asset Classes</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Space+Grotesk:wght@300;400;600&display=swap');
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --border: #1e1e2e;
+    --accent: #00ff88;
+    --text: #c8c8d8;
+    --text-dim: #55556a;
+    --text-bright: #eeeef8;
+    --red: #ff4466;
+    --orange: #ffaa44;
+    --blue: #0088ff;
+    --purple: #aa44ff;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Space Grotesk', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  header {
+    position: relative; z-index: 1;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+    background: rgba(10,10,15,0.9); backdrop-filter: blur(10px);
+  }
+  .logo {
+    width: 36px; height: 36px;
+    background: var(--accent); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; color: #000; font-size: 14px;
+    flex-shrink: 0; text-decoration: none;
+  }
+  header h1 {
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    color: var(--text-bright); letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  header p { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav a {
+    font-family: var(--mono); font-size: 11px; text-decoration: none;
+    padding: 6px 14px; border-radius: 6px; border: 1px solid transparent; transition: all 0.2s;
+  }
+  nav a.active { color: var(--accent); border-color: var(--accent); background: rgba(0,255,136,0.05); }
+  nav a:not(.active) { color: var(--text-dim); }
+  nav a:not(.active):hover { color: var(--text); border-color: var(--border); }
+
+  main {
+    position: relative; z-index: 1;
+    max-width: 1200px; margin: 0 auto;
+    padding: 32px;
+  }
+
+  .section-label {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 12px; margin-top: 32px;
+  }
+  .section-label:first-child { margin-top: 0; }
+
+  .broker-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .broker-header {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 20px;
+  }
+  .broker-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 13px;
+    flex-shrink: 0;
+  }
+  .broker-icon.kraken { background: var(--purple); color: #fff; }
+  .broker-icon.ibkr { background: var(--red); color: #fff; }
+  .broker-icon.binance { background: var(--orange); color: #000; }
+
+  .broker-name { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--text-bright); }
+  .broker-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .broker-status {
+    margin-left: auto;
+    font-family: var(--mono); font-size: 11px;
+    padding: 4px 10px; border-radius: 4px;
+  }
+  .broker-status.active { color: var(--accent); border: 1px solid rgba(0,255,136,0.3); background: rgba(0,255,136,0.05); }
+  .broker-status.inactive { color: var(--text-dim); border: 1px solid var(--border); }
+  .broker-status.stub { color: var(--orange); border: 1px solid rgba(255,170,68,0.3); background: rgba(255,170,68,0.05); }
+
+  .asset-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .asset-table th {
+    text-align: left;
+    font-family: var(--mono); font-size: 10px; font-weight: 600;
+    color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .asset-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(30,30,46,0.5);
+    vertical-align: top;
+  }
+  .asset-table tr:last-child td { border-bottom: none; }
+
+  .asset-symbol {
+    font-family: var(--mono); font-weight: 600; color: var(--text-bright);
+  }
+  .asset-name {
+    font-size: 11px; color: var(--text-dim); margin-top: 2px;
+  }
+
+  .tag {
+    display: inline-block;
+    font-family: var(--mono); font-size: 10px;
+    padding: 2px 8px; border-radius: 4px;
+    margin-right: 4px; margin-bottom: 2px;
+  }
+  .tag-strategy { color: var(--accent); background: rgba(0,255,136,0.08); border: 1px solid rgba(0,255,136,0.15); }
+  .tag-signal { color: var(--blue); background: rgba(0,136,255,0.08); border: 1px solid rgba(0,136,255,0.15); }
+  .tag-class { color: var(--orange); background: rgba(255,170,68,0.08); border: 1px solid rgba(255,170,68,0.15); }
+
+  .signal-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .signal-title {
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    color: var(--text-bright); margin-bottom: 4px;
+  }
+  .signal-desc {
+    font-size: 12px; color: var(--text-dim); margin-bottom: 16px;
+  }
+
+  .signal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .signal-item {
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(10,10,15,0.5);
+  }
+  .signal-item-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 6px;
+  }
+  .signal-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .signal-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .signal-dot.partial { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+  .signal-dot.inactive { background: var(--text-dim); }
+
+  .signal-item-name {
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--text-bright);
+  }
+  .signal-item-source {
+    font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+    margin-left: auto;
+  }
+  .signal-item-desc {
+    font-size: 11px; color: var(--text-dim); line-height: 1.5;
+  }
+
+  .wishlist-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .wishlist-title {
+    font-family: var(--mono); font-size: 14px; font-weight: 600;
+    color: var(--orange); margin-bottom: 4px;
+  }
+  .wishlist-desc {
+    font-size: 12px; color: var(--text-dim); margin-bottom: 16px;
+  }
+  .wish-item {
+    padding: 12px 14px;
+    border: 1px dashed rgba(255,170,68,0.25);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    background: rgba(255,170,68,0.02);
+  }
+  .wish-item:last-child { margin-bottom: 0; }
+  .wish-name {
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    color: var(--orange); margin-bottom: 4px;
+  }
+  .wish-reason {
+    font-size: 11px; color: var(--text-dim); line-height: 1.5;
+  }
+  .wish-impact {
+    display: inline-block; margin-top: 6px;
+    font-family: var(--mono); font-size: 10px;
+    padding: 2px 8px; border-radius: 4px;
+    color: var(--accent); background: rgba(0,255,136,0.08);
+    border: 1px solid rgba(0,255,136,0.15);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="logo">NT</a>
+  <div>
+    <h1>NakedTrader</h1>
+    <p>Asset Classes &amp; Data Signals</p>
+  </div>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/virtual-bank">Virtual Bank</a>
+    <a href="/strategies">Strategieen</a>
+    <a href="/performance">Performance</a>
+    <a href="/assets" class="active">Assets</a>
+  </nav>
+</header>
+
+<main>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION: TRADABLE ASSETS PER BROKER        -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-label">Handelbare assets per broker</div>
+
+<!-- KRAKEN -->
+<div class="broker-card">
+  <div class="broker-header">
+    <div class="broker-icon kraken">K</div>
+    <div>
+      <div class="broker-name">Kraken</div>
+      <div class="broker-desc">Crypto exchange — EUR pairs, public + private API</div>
+    </div>
+    <span class="broker-status active">ACTIEF</span>
+  </div>
+  <table class="asset-table">
+    <thead>
+      <tr>
+        <th>Asset</th>
+        <th>Pair</th>
+        <th>Asset class</th>
+        <th>Strategieen</th>
+        <th>Datafeed</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><div class="asset-symbol">BTC</div><div class="asset-name">Bitcoin</div></td>
+        <td><span class="asset-symbol">XXBTZEUR</span></td>
+        <td><span class="tag tag-class">Crypto</span></td>
+        <td>
+          <span class="tag tag-strategy">momentum</span>
+          <span class="tag tag-strategy">mean-reversion</span>
+          <span class="tag tag-strategy">breakout</span>
+          <span class="tag tag-strategy">arbitrage</span>
+        </td>
+        <td>
+          <span class="tag tag-signal">OHLC 1h/15m/4h</span>
+          <span class="tag tag-signal">Ticker</span>
+          <span class="tag tag-signal">Orderbook</span>
+        </td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">ETH</div><div class="asset-name">Ethereum</div></td>
+        <td><span class="asset-symbol">XETHZEUR</span></td>
+        <td><span class="tag tag-class">Crypto</span></td>
+        <td>
+          <span class="tag tag-strategy">momentum</span>
+          <span class="tag tag-strategy">mean-reversion</span>
+          <span class="tag tag-strategy">breakout</span>
+          <span class="tag tag-strategy">arbitrage</span>
+        </td>
+        <td>
+          <span class="tag tag-signal">OHLC 1h/15m/4h</span>
+          <span class="tag tag-signal">Ticker</span>
+          <span class="tag tag-signal">Orderbook</span>
+        </td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">SOL</div><div class="asset-name">Solana</div></td>
+        <td><span class="asset-symbol">SOLUSD</span></td>
+        <td><span class="tag tag-class">Crypto</span></td>
+        <td>
+          <span class="tag tag-strategy">breakout</span>
+        </td>
+        <td>
+          <span class="tag tag-signal">OHLC 4h</span>
+          <span class="tag tag-signal">Ticker</span>
+        </td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">ADA</div><div class="asset-name">Cardano</div></td>
+        <td><span class="asset-symbol">ADAEUR</span></td>
+        <td><span class="tag tag-class">Crypto</span></td>
+        <td colspan="2" style="color:var(--text-dim); font-size:11px;">Portfolio tracking only — geen actieve strategie</td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">PAXG</div><div class="asset-name">Paxos Gold</div></td>
+        <td><span class="asset-symbol">PAXGEUR</span></td>
+        <td><span class="tag tag-class">Commodity-backed</span></td>
+        <td colspan="2" style="color:var(--text-dim); font-size:11px;">Portfolio tracking only — geen actieve strategie</td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">USDC</div><div class="asset-name">USD Coin</div></td>
+        <td><span class="asset-symbol">USDCEUR</span></td>
+        <td><span class="tag tag-class">Stablecoin</span></td>
+        <td colspan="2" style="color:var(--text-dim); font-size:11px;">Portfolio tracking only — cash proxy</td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">STRK</div><div class="asset-name">Starknet</div></td>
+        <td><span class="asset-symbol">STRKEUR</span></td>
+        <td><span class="tag tag-class">Crypto / L2</span></td>
+        <td colspan="2" style="color:var(--text-dim); font-size:11px;">Portfolio tracking only — geen actieve strategie</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- IBKR -->
+<div class="broker-card">
+  <div class="broker-header">
+    <div class="broker-icon ibkr">IB</div>
+    <div>
+      <div class="broker-name">Interactive Brokers</div>
+      <div class="broker-desc">Aandelen, ETFs, Forex — via IB Gateway (:4001)</div>
+    </div>
+    <span class="broker-status inactive">GATEWAY UIT</span>
+  </div>
+  <table class="asset-table">
+    <thead>
+      <tr>
+        <th>Asset</th>
+        <th>Symbool</th>
+        <th>Asset class</th>
+        <th>Strategieen</th>
+        <th>Datafeed</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><div class="asset-symbol">EUR/USD</div><div class="asset-name">Euro / US Dollar</div></td>
+        <td><span class="asset-symbol">EURUSD</span></td>
+        <td><span class="tag tag-class">Forex</span></td>
+        <td><span class="tag tag-strategy">trend-follow</span></td>
+        <td><span class="tag tag-signal">Daily bars 1Y</span></td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">SPY</div><div class="asset-name">S&amp;P 500 ETF</div></td>
+        <td><span class="asset-symbol">SPY</span></td>
+        <td><span class="tag tag-class">ETF / Equity</span></td>
+        <td><span class="tag tag-strategy">trend-follow</span></td>
+        <td>
+          <span class="tag tag-signal">Daily bars 60d</span>
+          <span class="tag tag-signal">Regime detectie</span>
+        </td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">TLT</div><div class="asset-name">20+ Year Treasury Bond ETF</div></td>
+        <td><span class="asset-symbol">TLT</span></td>
+        <td><span class="tag tag-class">ETF / Bonds</span></td>
+        <td><span class="tag tag-strategy">trend-follow</span></td>
+        <td>
+          <span class="tag tag-signal">Daily bars 60d</span>
+          <span class="tag tag-signal">SPY/TLT ratio</span>
+        </td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">AAPL</div><div class="asset-name">Apple Inc.</div></td>
+        <td><span class="asset-symbol">AAPL</span></td>
+        <td><span class="tag tag-class">Equity / Tech</span></td>
+        <td><span class="tag tag-strategy">momentum</span></td>
+        <td><span class="tag tag-signal">Demo signals</span></td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">MSFT</div><div class="asset-name">Microsoft Corp.</div></td>
+        <td><span class="asset-symbol">MSFT</span></td>
+        <td><span class="tag tag-class">Equity / Tech</span></td>
+        <td><span class="tag tag-strategy">trend-follow</span></td>
+        <td><span class="tag tag-signal">Demo signals</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- BINANCE -->
+<div class="broker-card">
+  <div class="broker-header">
+    <div class="broker-icon binance">BN</div>
+    <div>
+      <div class="broker-name">Binance</div>
+      <div class="broker-desc">Crypto exchange — USDT pairs, OCO orders, testnet support</div>
+    </div>
+    <span class="broker-status stub">STUB</span>
+  </div>
+  <table class="asset-table">
+    <thead>
+      <tr><th>Asset</th><th>Pair</th><th>Asset class</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><div class="asset-symbol">BTC</div><div class="asset-name">Bitcoin</div></td>
+        <td><span class="asset-symbol">BTCUSDT</span></td>
+        <td><span class="tag tag-class">Crypto</span></td>
+        <td style="color:var(--text-dim); font-size:11px;">Connector klaar, geen actieve strategie gekoppeld</td>
+      </tr>
+      <tr>
+        <td><div class="asset-symbol">ETH</div><div class="asset-name">Ethereum</div></td>
+        <td><span class="asset-symbol">ETHUSDT</span></td>
+        <td><span class="tag tag-class">Crypto</span></td>
+        <td style="color:var(--text-dim); font-size:11px;">Connector klaar, geen actieve strategie gekoppeld</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION: ACTIEVE MARKTSIGNALEN              -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-label">Actieve marktsignalen</div>
+
+<!-- Technical Indicators -->
+<div class="signal-section">
+  <div class="signal-title">Technische indicatoren</div>
+  <div class="signal-desc">Berekend uit OHLCV data — per strategie geconfigureerd</div>
+  <div class="signal-grid">
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">EMA(9) / EMA(21)</div>
+        <div class="signal-item-source">Kraken OHLC</div>
+      </div>
+      <div class="signal-item-desc">Crossover signaal voor momentum. Self-adaptive: verlengt perioden bij hoge volatiliteit.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">RSI(14)</div>
+        <div class="signal-item-source">Kraken OHLC</div>
+      </div>
+      <div class="signal-item-desc">Relative Strength Index. Entry filter: RSI tussen 40-75 (momentum), oversold/overbought zones.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Bollinger Bands(20, 2.0)</div>
+        <div class="signal-item-source">Kraken OHLC</div>
+      </div>
+      <div class="signal-item-desc">Mean-reversion entry: prijs < lower band. BB-multiplier is self-adaptive per 50 trades.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Donchian Channels(20)</div>
+        <div class="signal-item-source">Kraken OHLC</div>
+      </div>
+      <div class="signal-item-desc">Breakout detectie: close > vorige Donchian upper met expanderende ATR.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">ATR(14)</div>
+        <div class="signal-item-source">Kraken OHLC</div>
+      </div>
+      <div class="signal-item-desc">Average True Range — volatiliteitsfilter voor breakout en position sizing.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Z-score(20)</div>
+        <div class="signal-item-source">Kraken OHLC</div>
+      </div>
+      <div class="signal-item-desc">Standaardafwijking van de prijs. Entry trigger: Z &lt; -2.0 (normaal) of -1.2 (agressief).</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Order Book Imbalance</div>
+        <div class="signal-item-source">Kraken Depth</div>
+      </div>
+      <div class="signal-item-desc">Bid/ask volume ratio. Arbitrage entry: imbalance > 30% (normaal) of 15% (agressief).</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot partial"></div>
+        <div class="signal-item-name">SMA(200) + SPY/TLT Ratio</div>
+        <div class="signal-item-source">IBKR Bars</div>
+      </div>
+      <div class="signal-item-desc">Macro trend regime detectie. Risk-on als SPY/TLT ratio > SMA en stijgend. Vereist IB Gateway.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Macro Risk Signals -->
+<div class="signal-section">
+  <div class="signal-title">Macro risicosignalen</div>
+  <div class="signal-desc">MacroRiskEngine — 3-laags geopolitiek + liquiditeit assessment (interval: 60 min)</div>
+  <div class="signal-grid">
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">VIX</div>
+        <div class="signal-item-source">yfinance ^VIX</div>
+      </div>
+      <div class="signal-item-desc">CBOE Volatility Index — directe markt-stress indicator. Gewicht: 15%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Credit Spread (HY OAS)</div>
+        <div class="signal-item-source">FRED BAMLH0A0HYM2</div>
+      </div>
+      <div class="signal-item-desc">ICE BofA High Yield spread — corporate risicopremie. Gewicht: 15%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Crude Oil (CL=F)</div>
+        <div class="signal-item-source">yfinance CL=F</div>
+      </div>
+      <div class="signal-item-desc">Olieprijsschok detectie — geopolitiek/supply chain proxy. Gewicht: 15%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Put/Call Ratio (SPY)</div>
+        <div class="signal-item-source">yfinance SPY options</div>
+      </div>
+      <div class="signal-item-desc">Options sentiment — hoog = bearish consensus. Gewicht: 10%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Gold / Dollar Ratio</div>
+        <div class="signal-item-source">yfinance GC=F, DX=F</div>
+      </div>
+      <div class="signal-item-desc">Flight-to-safety indicator. Stijgende ratio = risico-aversie. Gewicht: 10%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">GDELT Conflict Index</div>
+        <div class="signal-item-source">GDELT 2.0 API</div>
+      </div>
+      <div class="signal-item-desc">Geopolitieke spannings-index via global event monitoring. Verrijkt met Ollama AI. Gewicht: 10%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">VIX Term Structure</div>
+        <div class="signal-item-source">yfinance ^VIX, ^VVIX</div>
+      </div>
+      <div class="signal-item-desc">Contango/backwardation detectie — voorspelt volatiliteitsregime. Gewicht: 10%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Macro Calendar</div>
+        <div class="signal-item-source">Handmatig</div>
+      </div>
+      <div class="signal-item-desc">High-impact events (FOMC, NFP, ECB). Verhoogt risico-score rondom bekende data. Gewicht: 10%.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Fed TGA (Treasury Account)</div>
+        <div class="signal-item-source">FRED WTREGEN</div>
+      </div>
+      <div class="signal-item-desc">Systemische liquiditeit via Treasury General Account. Gewicht: 5%.</div>
+    </div>
+  </div>
+</div>
+
+<!-- AI Signals -->
+<div class="signal-section">
+  <div class="signal-title">AI-verrijking (Ollama)</div>
+  <div class="signal-desc">Lokale LLM modellen voor signal reasoning en geopolitieke analyse</div>
+  <div class="signal-grid">
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Signal Reasoning</div>
+        <div class="signal-item-source">qwen2.5:7b</div>
+      </div>
+      <div class="signal-item-desc">Verrijkt geblokkeerde signalen met uitleg waarom de orchestrator het signaal niet heeft uitgevoerd.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">GDELT Conflict Analysis</div>
+        <div class="signal-item-source">qwen2.5:7b</div>
+      </div>
+      <div class="signal-item-desc">Analyseert GDELT events om geopolitieke risico's te kwantificeren met context.</div>
+    </div>
+    <div class="signal-item">
+      <div class="signal-item-header">
+        <div class="signal-dot active"></div>
+        <div class="signal-item-name">Sentiment Classification</div>
+        <div class="signal-item-source">phi3:mini</div>
+      </div>
+      <div class="signal-item-desc">Lichtgewicht sentiment-classificatie voor news events.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- SECTION: WISHLIST                           -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-label">Wishlist — gewenste datasignalen</div>
+
+<div class="wishlist-card">
+  <div class="wishlist-title">Data die we nog niet hebben maar wel willen</div>
+  <div class="wishlist-desc">Signalen die de kwaliteit van beslissingen significant zouden verbeteren</div>
+
+  <div class="wish-item">
+    <div class="wish-name">Funding Rates (Kraken Futures / Binance Perpetuals)</div>
+    <div class="wish-reason">Funding rate is een sterke indicator voor overleveraged posities in de markt. Extreem positieve funding = long-heavy markt, verhoogt kans op short squeeze of liquidatie-cascade. Essentieel voor mean-reversion en momentum timing.</div>
+    <div class="wish-impact">Impact: momentum + mean-reversion verbeteren</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">On-Chain Metrics (Glassnode / CryptoQuant)</div>
+    <div class="wish-reason">Exchange inflows/outflows, whale wallet bewegingen, NUPL (Net Unrealized Profit/Loss). Deze data voorspelt grote markbewegingen 12-48u voor ze op de prijs zichtbaar zijn. Kraken/Binance API geeft dit niet.</div>
+    <div class="wish-impact">Impact: breakout signalen 12-48u eerder detecteren</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Liquidation Heatmaps (Coinglass / Binance OI)</div>
+    <div class="wish-reason">Open interest + liquidatieniveaus tonen waar grote margin calls zullen plaatsvinden. Dit zijn magneten voor de prijs — essentieel voor breakout richting en stop-loss plaatsing.</div>
+    <div class="wish-impact">Impact: breakout + arbitrage winstgevendheid</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Options Flow / Gamma Exposure (IBKR)</div>
+    <div class="wish-reason">Gamma exposure van market makers bepaalt of de markt mean-reverting of trending is. Positieve gamma = mean-reversion werkt, negatieve gamma = momentum werkt. Zou strategie-selectie automatisch verbeteren.</div>
+    <div class="wish-impact">Impact: automatische strategie-allocatie</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Social Sentiment (LunarCrush / Santiment)</div>
+    <div class="wish-reason">Social media sentiment aggregatie voor crypto assets. Extreme sentiment-shifts voorspellen reversals. Huidige Ollama sentiment-analyse is beperkt tot GDELT geopolitieke events.</div>
+    <div class="wish-impact">Impact: mean-reversion + momentum entry timing</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Macro Economic Calendar API (Forex Factory / Investing.com)</div>
+    <div class="wish-reason">Nu handmatig geconfigureerd (HIGH_IMPACT_EVENTS in macro.py). Automatische feed van FOMC, NFP, CPI, ECB meetings zou de macro calendar risk signal actueel houden zonder handmatig bijwerken.</div>
+    <div class="wish-impact">Impact: macro risk engine betrouwbaarder</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Cross-Exchange Orderbook Depth</div>
+    <div class="wish-reason">Orderbook data van meerdere exchanges tegelijk (Kraken + Binance + Coinbase). Dit zou echte cross-exchange arbitrage mogelijk maken i.p.v. single-exchange orderbook imbalance.</div>
+    <div class="wish-impact">Impact: arbitrage strategie naar echt arbitrage</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Volatility Surface (IBKR Options Chain)</div>
+    <div class="wish-reason">Implied volatility per strike en expiry. De IV skew voorspelt marktverwachtingen beter dan historische volatiliteit. Zou VIX proxy vervangen door real IV data.</div>
+    <div class="wish-impact">Impact: risk management + position sizing</div>
+  </div>
+
+  <div class="wish-item">
+    <div class="wish-name">Real-Time News Feed (Benzinga / NewsAPI)</div>
+    <div class="wish-reason">Breaking news events met structured data (sentiment, tickers, impact score). Combineren met Ollama voor real-time event-driven trading signals. GDELT heeft 15-min vertraging.</div>
+    <div class="wish-impact">Impact: event-driven strategy (nieuw)</div>
+  </div>
+
+</div>
+
+</main>
+</body>
+</html>

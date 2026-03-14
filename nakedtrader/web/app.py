@@ -62,6 +62,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_file(PUBLIC_DIR / "strategies.html", "text/html")
         elif path == "/performance":
             self._serve_file(PUBLIC_DIR / "performance.html", "text/html")
+        elif path == "/assets":
+            self._serve_file(PUBLIC_DIR / "assets.html", "text/html")
 
         # ── Chart API ────────────────────────────────
         elif path == "/api/charts/intraday":

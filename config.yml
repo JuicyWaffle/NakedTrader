@@ -25,7 +25,7 @@ state_path: strategy_state.json
 
 # ── Interactive Brokers ───────────────────────
 ibkr_host: "127.0.0.1"
-ibkr_port: 4001               # 4001 = Gateway paper, 4002 = Gateway live (TWS: 7497/7496)
+ibkr_port: 4002               # 4002 = Gateway paper, 4001 = Gateway live (TWS: 7497/7496)
 ibkr_client_id: 1
 
 # ── Crypto broker ─────────────────────────────

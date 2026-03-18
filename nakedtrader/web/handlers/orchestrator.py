@@ -19,21 +19,18 @@ def serve_status(handler, project_root, config):
             with open(state_path) as f:
                 pause_state = json.load(f)
 
-        data_dir = Path(str(project_root / config.data_dir))
+        # Lees execution stats uit database
+        from nakedtrader.db.repository import DataRepository
+        repo = DataRepository()
         exec_stats = {}
         for oid in ("A", "B", "C"):
-            exec_path = data_dir / f"executions_orch_{oid}.json"
-            if exec_path.exists():
-                try:
-                    with open(exec_path) as f:
-                        entries = json.load(f)
-                    executed = sum(1 for e in entries if e.get("decision") == "executed")
-                    blocked = sum(1 for e in entries if e.get("decision") == "blocked")
-                    exec_stats[oid] = {"total": len(entries), "executed": executed, "blocked": blocked}
-                except (json.JSONDecodeError, ValueError):
-                    exec_stats[oid] = {"total": 0, "executed": 0, "blocked": 0}
-            else:
-                exec_stats[oid] = {"total": 0, "executed": 0, "blocked": 0}
+            stats = repo.get_execution_stats(orchestrator_id=oid)
+            exec_stats[oid] = {
+                "total": stats.get("total", 0),
+                "executed": stats.get("executed", 0),
+                "blocked": stats.get("blocked", 0),
+            }
+        repo.close()
 
         handler._json(200, {"pause_state": pause_state, "execution_stats": exec_stats})
     except Exception as e:
@@ -43,14 +40,25 @@ def serve_status(handler, project_root, config):
 def serve_executions(handler, orch_id, limit, project_root, config):
     """GET /api/orchestrator/executions — Last N ExecutionReports."""
     try:
-        exec_path = Path(str(project_root / config.data_dir)) / f"executions_orch_{orch_id}.json"
-        if not exec_path.exists():
-            handler._json(200, {"orchestrator": orch_id, "executions": []})
-            return
-        with open(exec_path) as f:
-            entries = json.load(f)
-        entries = entries[-limit:]
-        entries.reverse()
+        from nakedtrader.db.repository import DataRepository
+        repo = DataRepository()
+        logs = repo.get_execution_reports(orchestrator_id=orch_id, limit=limit)
+        entries = [
+            {
+                "timestamp": str(e.timestamp) if e.timestamp else None,
+                "orchestrator_id": e.orchestrator_id,
+                "symbol": e.symbol,
+                "strategy_id": e.strategy_id,
+                "decision": e.decision,
+                "reason": e.reason,
+                "rule_triggered": e.rule_triggered,
+                "risk_score": e.risk_score,
+                "drawdown_pct": e.drawdown_pct,
+                "size_executed": e.size_executed,
+            }
+            for e in logs
+        ]
+        repo.close()
         handler._json(200, {"orchestrator": orch_id, "executions": entries})
     except Exception as e:
         handler._json(500, {"error": str(e)})

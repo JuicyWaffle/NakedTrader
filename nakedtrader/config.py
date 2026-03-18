@@ -9,6 +9,8 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from nakedtrader.exceptions import ConfigError
+
 
 @dataclass
 class Config:
@@ -66,6 +68,34 @@ class Config:
     # ── Loop ───────────────────────────────────
     interval_seconds: int = 60
 
+    def validate(self):
+        """Valideer alle configuratiewaarden. Gooit ConfigError bij fouten."""
+        errors: list[str] = []
+
+        if self.total_capital <= 0:
+            errors.append(f"total_capital moet > 0 zijn, is {self.total_capital}")
+        if not (0 < self.kelly_fraction <= 1):
+            errors.append(f"kelly_fraction moet in (0, 1] zijn, is {self.kelly_fraction}")
+        if not (0 < self.max_position_pct <= 1):
+            errors.append(f"max_position_pct moet in (0, 1] zijn, is {self.max_position_pct}")
+        if not (0 < self.stop_loss_pct <= 1):
+            errors.append(f"stop_loss_pct moet in (0, 1] zijn, is {self.stop_loss_pct}")
+        if not (0 < self.take_profit_pct <= 1):
+            errors.append(f"take_profit_pct moet in (0, 1] zijn, is {self.take_profit_pct}")
+        if not (0 <= self.drawdown_limit_pct <= 1):
+            errors.append(f"drawdown_limit_pct moet in [0, 1] zijn, is {self.drawdown_limit_pct}")
+        if self.max_open_positions < 1:
+            errors.append(f"max_open_positions moet >= 1 zijn, is {self.max_open_positions}")
+        if not (1024 <= self.ibkr_port <= 65535):
+            errors.append(f"ibkr_port moet in [1024, 65535] zijn, is {self.ibkr_port}")
+        if self.interval_seconds <= 0:
+            errors.append(f"interval_seconds moet > 0 zijn, is {self.interval_seconds}")
+        if not (0 <= self.macro_risk_veto_threshold <= 1):
+            errors.append(f"macro_risk_veto_threshold moet in [0, 1] zijn, is {self.macro_risk_veto_threshold}")
+
+        if errors:
+            raise ConfigError("Configuratiefouten:\n  - " + "\n  - ".join(errors))
+
 
 def load_config(config_path="config.yml", env_path=".env", project_dir=None) -> Config:
     """Laad configuratie uit config.yml + secrets uit .env"""
@@ -114,6 +144,9 @@ def load_config(config_path="config.yml", env_path=".env", project_dir=None) -> 
         ollama_url=yml.get("ollama_url", "http://localhost:11434"),
         interval_seconds=yml.get("interval_seconds", 60),
     )
+
+    # Valideer configuratie
+    config.validate()
 
     # Auto-migratie: als oude paden bestaan maar nieuwe niet
     _migrate_data_files(project_dir, config)

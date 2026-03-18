@@ -3,7 +3,7 @@ nakedtrader/db/models.py — SQLAlchemy modellen voor NakedTrader.
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, JSON, ForeignKey
+from sqlalchemy import Column, Index, Integer, String, Float, Boolean, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -27,6 +27,11 @@ class Trade(Base):
     mode = Column(String)    # paper/live
     notes = Column(String)
 
+    __table_args__ = (
+        Index("ix_trades_timestamp", "timestamp"),
+        Index("ix_trades_strategy_id", "strategy_id"),
+    )
+
 class ExecutionLog(Base):
     """Alle beslissingen van de orchestrator (audit trail)."""
     __tablename__ = "execution_log"
@@ -42,6 +47,11 @@ class ExecutionLog(Base):
     risk_score = Column(Float)
     drawdown_pct = Column(Float)
     size_executed = Column(Float)
+
+    __table_args__ = (
+        Index("ix_execlog_timestamp", "timestamp"),
+        Index("ix_execlog_orchestrator_id", "orchestrator_id"),
+    )
 
 class EquityPoint(Base):
     """Kapitaal-snapshots voor de equity curve."""

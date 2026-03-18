@@ -10,7 +10,7 @@ from typing import Optional
 
 from nakedtrader.brokers.base import AbstractBroker
 from nakedtrader.types import TradeSignal
-from nakedtrader.exceptions import KrakenError
+from nakedtrader.exceptions import KrakenError, BrokerConnectionError, BrokerOrderError
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class KrakenBroker(AbstractBroker):
             self._connected = True
             log.info(f"Kraken verbonden. Assets: {list(response.get('result', {}).keys())}")
             return True
-        except Exception as e:
+        except (KrakenError, ConnectionError, OSError) as e:
             log.error(f"Kraken verbinding mislukt: {e}")
             self._connected = False
             return False
@@ -69,7 +69,7 @@ class KrakenBroker(AbstractBroker):
             # ZEUR is Kraken code voor EUR
             balance = float(response["result"].get("ZEUR", 0.0))
             return balance
-        except Exception as e:
+        except (KrakenError, ConnectionError, KeyError) as e:
             log.error(f"Fout bij ophalen Kraken balans: {e}")
             return 0.0
 
@@ -135,7 +135,7 @@ class KrakenBroker(AbstractBroker):
                     # Gebruik het paar-naam als symbool voor consistentie met signalen
                     positions[matching_key] = value_eur
 
-        except Exception as e:
+        except (KrakenError, ConnectionError, KeyError, ValueError) as e:
             log.error(f"Fout bij ophalen Kraken posities: {e}")
 
         return positions
@@ -225,7 +225,7 @@ class KrakenBroker(AbstractBroker):
                 "price": price
             }
 
-        except Exception as e:
+        except (KrakenError, ConnectionError, KeyError, ValueError) as e:
             log.error(f"Fout bij plaatsen Kraken order {symbol}: {e}")
             return None
 
@@ -237,5 +237,5 @@ class KrakenBroker(AbstractBroker):
             ticker_key = list(response["result"].keys())[0]
             # 'c' = last trade closed [price, lot volume]
             return float(response["result"][ticker_key]["c"][0])
-        except Exception:
+        except (KrakenError, ConnectionError, KeyError, ValueError):
             return 0.0

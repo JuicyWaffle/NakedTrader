@@ -60,15 +60,21 @@ def get_system_status() -> dict:
     if state_path.exists():
         pause_state = _read_json(state_path)
 
-    # Execution stats per orchestrator
+    # Execution stats per orchestrator (uit database)
     exec_stats = {}
-    for oid in ("A", "B", "C"):
-        entries = _read_json(_data_dir / f"executions_orch_{oid}.json")
-        if entries:
-            executed = sum(1 for e in entries if e.get("decision") == "executed")
-            blocked = sum(1 for e in entries if e.get("decision") == "blocked")
-            exec_stats[oid] = {"total": len(entries), "executed": executed, "blocked": blocked}
-        else:
+    try:
+        from nakedtrader.db.repository import DataRepository
+        _repo = DataRepository()
+        for oid in ("A", "B", "C"):
+            stats = _repo.get_execution_stats(orchestrator_id=oid)
+            exec_stats[oid] = {
+                "total": stats.get("total", 0),
+                "executed": stats.get("executed", 0),
+                "blocked": stats.get("blocked", 0),
+            }
+        _repo.close()
+    except Exception:
+        for oid in ("A", "B", "C"):
             exec_stats[oid] = {"total": 0, "executed": 0, "blocked": 0}
 
     # Virtual bank summary
@@ -136,7 +142,21 @@ def get_overnight_report(hours: int = 12) -> dict:
     cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
 
     # Execution reports (orchestrator A = primary)
-    all_entries = _read_json(_data_dir / "executions_orch_A.json")
+    try:
+        from nakedtrader.db.repository import DataRepository
+        _repo = DataRepository()
+        logs = _repo.get_execution_reports(orchestrator_id="A", limit=1000)
+        all_entries = [
+            {"timestamp": str(e.timestamp), "decision": e.decision, "reason": e.reason,
+             "rule_triggered": e.rule_triggered, "risk_score": e.risk_score,
+             "size_executed": e.size_executed,
+             "signal": {"symbol": e.symbol, "strategy_id": e.strategy_id}}
+            for e in logs
+        ]
+        all_entries.reverse()
+        _repo.close()
+    except Exception:
+        all_entries = _read_json(_data_dir / "executions_orch_A.json")
     recent = [e for e in all_entries if e.get("timestamp", "") >= cutoff]
 
     executed = [e for e in recent if e.get("decision") == "executed"]
@@ -413,9 +433,23 @@ def get_execution_log(orchestrator_id: str = "A", limit: int = 50) -> dict:
     """
     _init()
 
-    entries = _read_json(_data_dir / f"executions_orch_{orchestrator_id}.json")
-    entries = entries[-limit:]
-    entries.reverse()
+    try:
+        from nakedtrader.db.repository import DataRepository
+        _repo = DataRepository()
+        logs = _repo.get_execution_reports(orchestrator_id=orchestrator_id, limit=limit)
+        entries = [
+            {"timestamp": str(e.timestamp), "orchestrator_id": e.orchestrator_id,
+             "decision": e.decision, "reason": e.reason, "rule_triggered": e.rule_triggered,
+             "risk_score": e.risk_score, "drawdown_pct": e.drawdown_pct,
+             "size_executed": e.size_executed,
+             "signal": {"symbol": e.symbol, "strategy_id": e.strategy_id}}
+            for e in logs
+        ]
+        _repo.close()
+    except Exception:
+        entries = _read_json(_data_dir / f"executions_orch_{orchestrator_id}.json")
+        entries = entries[-limit:]
+        entries.reverse()
 
     return {"orchestrator": orchestrator_id, "executions": entries}
 
@@ -473,8 +507,19 @@ def ai_market_analysis(question: str) -> dict:
     context_parts = []
 
     # Recente executions
-    entries = _read_json(_data_dir / "executions_orch_A.json")
-    recent = entries[-20:] if entries else []
+    try:
+        from nakedtrader.db.repository import DataRepository
+        _repo = DataRepository()
+        logs = _repo.get_execution_reports(orchestrator_id="A", limit=20)
+        recent = [
+            {"decision": e.decision, "reason": e.reason, "rule_triggered": e.rule_triggered,
+             "signal": {"symbol": e.symbol, "strategy_id": e.strategy_id}}
+            for e in logs
+        ]
+        _repo.close()
+    except Exception:
+        entries = _read_json(_data_dir / "executions_orch_A.json")
+        recent = entries[-20:] if entries else []
     if recent:
         executed = sum(1 for e in recent if e.get("decision") == "executed")
         blocked = sum(1 for e in recent if e.get("decision") == "blocked")

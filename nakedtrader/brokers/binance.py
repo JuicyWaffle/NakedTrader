@@ -10,6 +10,7 @@ from typing import Optional
 
 from nakedtrader.brokers.base import AbstractBroker
 from nakedtrader.types import TradeSignal
+from nakedtrader.exceptions import BinanceError, BrokerConnectionError, BrokerOrderError
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class BinanceBroker(AbstractBroker):
             self._connected = True
             log.info(f"Binance verbonden (testnet={self.config.binance_testnet})")
             return True
-        except Exception as e:
+        except (BinanceError, ConnectionError, OSError) as e:
             log.error(f"Kan niet verbinden met Binance: {e}")
             self._connected = False
             return False
@@ -75,7 +76,7 @@ class BinanceBroker(AbstractBroker):
                     log.warning("EURUSDT ticker niet beschikbaar, schatting 1.08 gebruikt")
                     return usdt_free / 1.08
 
-        except Exception as e:
+        except (BinanceError, ConnectionError, KeyError, ValueError) as e:
             log.error(f"Fout bij ophalen Binance balans: {e}")
             
         return 0.0
@@ -119,7 +120,7 @@ class BinanceBroker(AbstractBroker):
                 if price > 0:
                     positions[symbol] = amount * price
 
-        except Exception as e:
+        except (BinanceError, ConnectionError, KeyError, ValueError) as e:
              log.error(f"Fout bij ophalen Binance posities: {e}")
              
         return positions
@@ -193,6 +194,6 @@ class BinanceBroker(AbstractBroker):
                 "oco_id": oco['orderListId']
             }
 
-        except Exception as e:
+        except (BinanceError, ConnectionError, KeyError, ValueError) as e:
             log.error(f"Fout bij plaatsen Binance order {symbol}: {e}")
             return None

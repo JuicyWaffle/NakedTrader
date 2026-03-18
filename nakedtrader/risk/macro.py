@@ -23,9 +23,11 @@ API keys: FRED_API_KEY in .env (gratis: fred.stlouisfed.org/api_key)
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import os
+import zipfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from typing import Optional
@@ -131,6 +133,81 @@ class RiskReport:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# RISK THRESHOLDS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class RiskThresholds:
+    """Alle drempelwaarden voor de MacroRiskEngine op één plek."""
+
+    # ── Alert drempels ──
+    vix_threshold: float = 25.0
+    vix_backwardation_threshold: float = 1.05
+    put_call_threshold: float = 1.20
+    oil_shock_pct: float = 0.03
+    credit_spread_threshold: float = 450.0
+    gdelt_conflict_threshold: float = -3.0
+    emergency_score: float = 0.85
+
+    # ── VIX normalisatie: vix_norm_min=0.0, vix_norm_max=1.0 voor range [15, 40] ──
+    vix_norm_low: float = 15.0
+    vix_norm_range: float = 25.0       # 40 - 15
+    vvix_alert_level: float = 120.0
+
+    # ── VIX term structure normalisatie ──
+    vix_ts_norm_low: float = 0.9
+    vix_ts_norm_range: float = 0.4     # 1.3 - 0.9
+
+    # ── Put/call normalisatie ──
+    pcr_norm_low: float = 0.7
+    pcr_norm_range: float = 1.1        # 1.8 - 0.7
+
+    # ── Credit spread normalisatie (bps) ──
+    cs_norm_low: float = 300.0
+    cs_norm_range: float = 500.0       # 800 - 300
+
+    # ── Oil shock normalisatie ──
+    oil_shock_norm_factor: float = 2.0  # pct_change / (oil_shock_pct * factor)
+
+    # ── Gold/dollar flight-to-safety ──
+    gd_norm_offset: float = 0.02
+    gd_norm_range: float = 0.04
+    gd_flight_alert: float = 0.015
+
+    # ── GDELT normalisatie ──
+    gdelt_norm_offset: float = 5.0
+    gdelt_norm_range: float = 10.0
+
+    # ── Fed TGA normalisatie ──
+    tga_norm_factor: float = 5.0
+    tga_lookback_days: int = 90
+
+    # ── Fear & Greed alert levels ──
+    fg_extreme_fear: int = 20
+    fg_extreme_greed: int = 80
+
+    # ── Funding rate normalisatie ──
+    fr_norm_divisor: float = 0.001
+    fr_alert_high: float = 0.0005
+    fr_alert_low: float = -0.0005
+
+    # ── Score classificatie grenzen ──
+    score_green_max: float = 0.35
+    score_orange_max: float = 0.65
+
+    # ── Kelly & SL multipliers per risk level ──
+    kelly_green: float = 1.00
+    kelly_orange: float = 0.50
+    kelly_red: float = 0.25
+    sl_green: float = 1.00
+    sl_orange: float = 0.80
+    sl_red: float = 0.60
+
+    # ── Strategy fit correctie ──
+    strategy_fit_factor: float = 0.4
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # MACRO RISK ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -141,6 +218,20 @@ class MacroRiskEngine:
     Alle drempelwaarden zijn aanpasbaar zodat bots ze kunnen overschrijven
     op basis van hun eigen risicoprofiel.
     """
+
+    # ── Strategy Sensitivity Matrix ──
+    # Per strategie: hoe beïnvloedt elk macro-signaal de strategie?
+    # Positief = gunstig bij hoog signaal, negatief = ongunstig
+    STRATEGY_SENSITIVITY = {
+        "momentum":          {"vix": -0.6, "credit_spread": -0.3, "oil_shock": -0.2, "funding_rate": 0.0,  "fear_greed": -0.2},
+        "mean-reversion":    {"vix": -0.3, "credit_spread": -0.2, "oil_shock": -0.1, "funding_rate": +0.3, "fear_greed": +0.3},
+        "breakout":          {"vix": +0.7, "credit_spread": +0.2, "oil_shock": +0.4, "funding_rate": 0.0,  "fear_greed": +0.2},
+        "arbitrage":         {"vix": -0.4, "credit_spread": -0.5, "oil_shock": -0.2, "funding_rate": +0.2, "fear_greed": 0.0},
+        "trend-follow":      {"vix": +0.3, "credit_spread": -0.4, "oil_shock": -0.3, "funding_rate": 0.0,  "fear_greed": -0.3},
+        "funding-contrarian":{"vix": -0.2, "credit_spread": -0.1, "oil_shock": 0.0,  "funding_rate": +0.8, "fear_greed": 0.0},
+        "cross-arb":         {"vix": -0.5, "credit_spread": -0.6, "oil_shock": -0.3, "funding_rate": +0.4, "fear_greed": 0.0},
+        "vol-regime":        {"vix": +0.8, "credit_spread": +0.3, "oil_shock": +0.5, "funding_rate": 0.0,  "fear_greed": +0.4},
+    }
 
     # ── FRED series IDs ──
     FRED_SERIES = {
@@ -174,6 +265,7 @@ class MacroRiskEngine:
         gdelt_conflict_threshold:    float = -3.0,
         emergency_score:             float = 0.85,
         ollama_enabled:              bool = False,
+        thresholds:                  Optional[RiskThresholds] = None,
     ) -> None:
         # Laad .env als dat nog niet gebeurd is
         if not os.getenv("FRED_API_KEY"):
@@ -185,21 +277,31 @@ class MacroRiskEngine:
                     load_dotenv(env_path)
                 except ImportError:
                     pass
-        self.fred_api_key                = fred_api_key or os.getenv("FRED_API_KEY", "")
-        self.vix_threshold               = vix_threshold
-        self.vix_backwardation_threshold = vix_backwardation_threshold
-        self.put_call_threshold          = put_call_threshold
-        self.oil_shock_pct               = oil_shock_pct
-        self.credit_spread_threshold     = credit_spread_threshold
-        self.gdelt_conflict_threshold    = gdelt_conflict_threshold
-        self.emergency_score             = emergency_score
-        self.ollama_enabled              = ollama_enabled
+        self.fred_api_key = fred_api_key or os.getenv("FRED_API_KEY", "")
+        self.ollama_enabled = ollama_enabled
+
+        # RiskThresholds: expliciet of vanuit kwargs (backward-compat)
+        if thresholds is not None:
+            self.thresholds = thresholds
+        else:
+            self.thresholds = RiskThresholds(
+                vix_threshold=vix_threshold,
+                vix_backwardation_threshold=vix_backwardation_threshold,
+                put_call_threshold=put_call_threshold,
+                oil_shock_pct=oil_shock_pct,
+                credit_spread_threshold=credit_spread_threshold,
+                gdelt_conflict_threshold=gdelt_conflict_threshold,
+                emergency_score=emergency_score,
+            )
+
+        # Backward-compat shortcuts
+        self.emergency_score = self.thresholds.emergency_score
 
         self._fred: Optional[object] = None
         if _FRED_AVAILABLE and self.fred_api_key:
             try:
                 self._fred = Fred(api_key=self.fred_api_key)
-            except Exception as e:
+            except (ConnectionError, ValueError, OSError) as e:
                 log.warning("FRED initialisatie mislukt: %s", e)
 
     # ── Publieke interface ───────────────────────────────────────────────────
@@ -266,6 +368,50 @@ class MacroRiskEngine:
             data_quality={},
         )
 
+    # ── Per-strategie macro-fit ────────────────────────────────────────────
+
+    def strategy_fit(self, sid: str, signals: dict | None = None) -> float:
+        """Bereken hoe goed de huidige macro-omgeving past bij strategie *sid*.
+
+        Returns float in [-1, +1]: positief = gunstig, negatief = ongunstig.
+        Als *signals* niet opgegeven, wordt een evaluate() gedaan.
+        """
+        sensitivity = self.STRATEGY_SENSITIVITY.get(sid)
+        if not sensitivity:
+            return 0.0
+
+        if signals is None:
+            report = self.evaluate()
+            signals = report.signals
+
+        total = 0.0
+        count = 0
+        for signal_key, weight in sensitivity.items():
+            value = signals.get(signal_key)
+            if value is None:
+                continue
+            # Signal loopt 0..1 (0=laag risico, 1=hoog). Centreer rond 0.5.
+            centered = value - 0.5
+            total += centered * weight
+            count += 1
+
+        if count == 0:
+            return 0.0
+        return max(-1.0, min(1.0, total))
+
+    def strategy_kelly_mult(self, sid: str, signals: dict | None = None) -> float:
+        """Per-strategie Kelly multiplier: globale kelly × strategie-fit correctie."""
+        if signals is None:
+            report = self.evaluate()
+            signals = report.signals
+            base_kelly = report.kelly_mult
+        else:
+            score = self._compute_score(signals)
+            _, base_kelly, _ = self._classify(score)
+
+        fit = self.strategy_fit(sid, signals)
+        return round(base_kelly * max(0.1, 1.0 + fit * self.thresholds.strategy_fit_factor), 3)
+
     # ── Laag 1: Marktstructuur ───────────────────────────────────────────────
 
     def _fetch_vix(self, alerts: list, dq: dict) -> dict:
@@ -282,22 +428,24 @@ class MacroRiskEngine:
             vix_current = float(vix_data["Close"].iloc[-1])
             dq["yfinance_vix"] = True
 
-            # Normaliseer: 15=0.0, 25=0.5, 40+=1.0
-            result["vix"] = round(min(max((vix_current - 15) / 25, 0.0), 1.0), 3)
+            # Normaliseer VIX naar 0..1
+            result["vix"] = round(min(max(
+                (vix_current - self.thresholds.vix_norm_low) / self.thresholds.vix_norm_range,
+                0.0), 1.0), 3)
             result["vix_raw"] = round(vix_current, 1)
 
-            if vix_current > self.vix_threshold:
-                alerts.append(f"VIX verhoogd: {vix_current:.1f} > drempel {self.vix_threshold}")
+            if vix_current > self.thresholds.vix_threshold:
+                alerts.append(f"VIX verhoogd: {vix_current:.1f} > drempel {self.thresholds.vix_threshold}")
 
             # Term structure proxy: huidige VIX vs 5d gemiddelde
             if len(vix_data) >= 5:
                 vix_avg = float(vix_data["Close"].mean())
                 ts_ratio = vix_current / vix_avg if vix_avg > 0 else 1.0
                 result["vix_term_structure"] = round(
-                    min(max((ts_ratio - 0.9) / 0.4, 0.0), 1.0), 3
+                    min(max((ts_ratio - self.thresholds.vix_ts_norm_low) / self.thresholds.vix_ts_norm_range, 0.0), 1.0), 3
                 )
                 result["vix_ts_ratio"] = round(ts_ratio, 3)
-                if ts_ratio > self.vix_backwardation_threshold:
+                if ts_ratio > self.thresholds.vix_backwardation_threshold:
                     alerts.append(f"VIX backwardation: ratio={ts_ratio:.2f}")
 
             # VVIX als extra signaal
@@ -306,12 +454,12 @@ class MacroRiskEngine:
                 if not vvix_data.empty:
                     vvix = float(vvix_data["Close"].iloc[-1])
                     result["vvix_raw"] = round(vvix, 1)
-                    if vvix > 120:
+                    if vvix > self.thresholds.vvix_alert_level:
                         alerts.append(f"VVIX sterk verhoogd: {vvix:.1f}")
             except Exception:
                 pass
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("VIX ophalen mislukt: %s", e)
             dq["yfinance_vix"] = False
 
@@ -336,14 +484,16 @@ class MacroRiskEngine:
                 raise ValueError("Call volume = 0")
 
             ratio = total_put_vol / total_call_vol
-            result["put_call_ratio"] = round(min(max((ratio - 0.7) / 1.1, 0.0), 1.0), 3)
+            result["put_call_ratio"] = round(min(max(
+                (ratio - self.thresholds.pcr_norm_low) / self.thresholds.pcr_norm_range,
+                0.0), 1.0), 3)
             result["put_call_ratio_raw"] = round(ratio, 3)
             dq["yfinance_options"] = True
 
-            if ratio > self.put_call_threshold:
+            if ratio > self.thresholds.put_call_threshold:
                 alerts.append(f"Put/call ratio verhoogd: {ratio:.2f}")
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Put/call ratio mislukt: %s", e)
             dq["yfinance_options"] = False
 
@@ -364,14 +514,16 @@ class MacroRiskEngine:
                 raise ValueError("Lege FRED serie")
 
             spread = float(series.dropna().iloc[-1])
-            result["credit_spread"] = round(min(max((spread - 300) / 500, 0.0), 1.0), 3)
+            result["credit_spread"] = round(min(max(
+                (spread - self.thresholds.cs_norm_low) / self.thresholds.cs_norm_range,
+                0.0), 1.0), 3)
             result["credit_spread_raw"] = round(spread, 1)
             dq["FRED_credit_spread"] = True
 
-            if spread > self.credit_spread_threshold:
+            if spread > self.thresholds.credit_spread_threshold:
                 alerts.append(f"Credit spread verhoogd: {spread:.0f}bps")
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Credit spread mislukt: %s", e)
             dq["FRED_credit_spread"] = False
 
@@ -394,15 +546,17 @@ class MacroRiskEngine:
             close_prev = float(cl["Close"].iloc[-2])
             pct_change = abs((close_today - close_prev) / close_prev)
 
-            result["oil_shock"] = round(min(pct_change / (self.oil_shock_pct * 2), 1.0), 3)
+            result["oil_shock"] = round(min(
+                pct_change / (self.thresholds.oil_shock_pct * self.thresholds.oil_shock_norm_factor),
+                1.0), 3)
             result["oil_pct_change_raw"] = round(pct_change * 100, 2)
             result["oil_price_raw"] = round(close_today, 2)
             dq["yfinance_oil"] = True
 
-            if pct_change > self.oil_shock_pct:
+            if pct_change > self.thresholds.oil_shock_pct:
                 alerts.append(f"Olieprijsschok: {pct_change*100:.1f}% in 24u")
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Olieprijs mislukt: %s", e)
             dq["yfinance_oil"] = False
 
@@ -426,19 +580,19 @@ class MacroRiskEngine:
 
             flight_signal = (gold_ratio - 1.0) - (dxy_ratio - 1.0)
             result["gold_dollar_ratio"] = round(
-                min(max((flight_signal + 0.02) / 0.04, 0.0), 1.0), 3
+                min(max((flight_signal + self.thresholds.gd_norm_offset) / self.thresholds.gd_norm_range, 0.0), 1.0), 3
             )
             result["gold_5d_change_pct"] = round((gold_ratio - 1) * 100, 2)
             result["dxy_5d_change_pct"] = round((dxy_ratio - 1) * 100, 2)
             dq["yfinance_gold_dxy"] = True
 
-            if flight_signal > 0.015:
+            if flight_signal > self.thresholds.gd_flight_alert:
                 alerts.append(
                     f"Vlucht naar veilige havens: goud +{(gold_ratio-1)*100:.1f}%, "
                     f"dollar {(dxy_ratio-1)*100:+.1f}% (5d)"
                 )
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Goud/dollar mislukt: %s", e)
             dq["yfinance_gold_dxy"] = False
 
@@ -466,8 +620,6 @@ class MacroRiskEngine:
             else:
                 raise ValueError("GDELT niet bereikbaar")
 
-            import io
-            import zipfile
             with zipfile.ZipFile(io.BytesIO(response.content)) as z:
                 with z.open(z.namelist()[0]) as f:
                     df = pd.read_csv(
@@ -487,13 +639,13 @@ class MacroRiskEngine:
 
             avg_goldstein = float(conflict_df["goldstein"].mean())
             result["gdelt_conflict_index"] = round(
-                min(max((-avg_goldstein + 5) / 10, 0.0), 1.0), 3
+                min(max((-avg_goldstein + self.thresholds.gdelt_norm_offset) / self.thresholds.gdelt_norm_range, 0.0), 1.0), 3
             )
             result["gdelt_avg_goldstein"] = round(avg_goldstein, 2)
             result["gdelt_conflict_events"] = int(len(conflict_df))
             dq["GDELT"] = True
 
-            if avg_goldstein < self.gdelt_conflict_threshold:
+            if avg_goldstein < self.thresholds.gdelt_conflict_threshold:
                 alert_text = (
                     f"GDELT conflict index verhoogd: Goldstein={avg_goldstein:.1f} "
                     f"({len(conflict_df)} events)"
@@ -520,7 +672,7 @@ class MacroRiskEngine:
 
                 alerts.append(alert_text)
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError, zipfile.BadZipFile) as e:
             log.warning("GDELT mislukt: %s", e)
             dq["GDELT"] = False
 
@@ -594,12 +746,14 @@ class MacroRiskEngine:
             tga_current = float(tga_clean.iloc[-1])
             tga_avg = float(tga_clean.iloc[-min(10, len(tga_clean)):].mean())
             tga_change = (tga_current - tga_avg) / tga_avg if tga_avg != 0 else 0
-            result["fed_liquidity"] = round(min(max(tga_change * 5 + 0.5, 0.0), 1.0), 3)
+            result["fed_liquidity"] = round(min(max(
+                tga_change * self.thresholds.tga_norm_factor + 0.5,
+                0.0), 1.0), 3)
             result["tga_current_bn"] = round(tga_current / 1e9, 1)
             result["tga_10d_change_pct"] = round(tga_change * 100, 2)
             dq["FRED_tga"] = True
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Fed liquiditeit mislukt: %s", e)
             dq["FRED_tga"] = False
 
@@ -630,12 +784,12 @@ class MacroRiskEngine:
             result["fear_greed_label"] = label
             dq["fear_greed"] = True
 
-            if value <= 20:
+            if value <= self.thresholds.fg_extreme_fear:
                 alerts.append(f"Extreme Fear: F&G={value} ({label})")
-            elif value >= 80:
+            elif value >= self.thresholds.fg_extreme_greed:
                 alerts.append(f"Extreme Greed: F&G={value} ({label})")
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Fear & Greed mislukt: %s", e)
             dq["fear_greed"] = False
         return result
@@ -660,12 +814,12 @@ class MacroRiskEngine:
 
             # Normaliseer: -0.1% tot +0.1% = neutraal, extremen = hoog risico
             abs_rate = abs(rate)
-            result["funding_rate"] = round(min(abs_rate / 0.001, 1.0), 3)
+            result["funding_rate"] = round(min(abs_rate / self.thresholds.fr_norm_divisor, 1.0), 3)
             dq["funding_rate"] = True
 
-            if rate > 0.0005:
+            if rate > self.thresholds.fr_alert_high:
                 alerts.append(f"Hoge funding rate BTC: {rate*100:.4f}% (long-heavy)")
-            elif rate < -0.0005:
+            elif rate < self.thresholds.fr_alert_low:
                 alerts.append(f"Negatieve funding rate BTC: {rate*100:.4f}% (short-heavy)")
 
             # Voeg ook ETH en open interest toe
@@ -694,7 +848,7 @@ class MacroRiskEngine:
             except Exception:
                 pass
 
-        except Exception as e:
+        except (ConnectionError, ValueError, OSError, KeyError) as e:
             log.warning("Funding rate mislukt: %s", e)
             dq["funding_rate"] = False
         return result
@@ -718,9 +872,10 @@ class MacroRiskEngine:
         return weighted_sum / total_weight
 
     def _classify(self, score: float) -> tuple[str, float, float]:
-        if score < 0.35:
-            return "green", 1.00, 1.00
-        elif score < 0.65:
-            return "orange", 0.50, 0.80
+        t = self.thresholds
+        if score < t.score_green_max:
+            return "green", t.kelly_green, t.sl_green
+        elif score < t.score_orange_max:
+            return "orange", t.kelly_orange, t.sl_orange
         else:
-            return "red", 0.25, 0.60
+            return "red", t.kelly_red, t.sl_red

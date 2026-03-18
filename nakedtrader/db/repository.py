@@ -5,6 +5,7 @@ nakedtrader/db/repository.py — Data Access Object (DAO) voor de database.
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Any
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from nakedtrader.db.models import Trade, ExecutionLog, EquityPoint, StrategyState
 from nakedtrader.db.session import get_db_manager
@@ -83,6 +84,31 @@ class DataRepository:
         except Exception as e:
             self.db.rollback()
             log.error(f"Fout bij toevoegen execution log: {e}")
+
+    def get_execution_reports(
+        self, orchestrator_id: str = None, limit: int = 100, decision: str = None,
+    ) -> List[ExecutionLog]:
+        """Haal execution reports op uit de database."""
+        query = self.db.query(ExecutionLog)
+        if orchestrator_id:
+            query = query.filter(ExecutionLog.orchestrator_id == orchestrator_id)
+        if decision:
+            query = query.filter(ExecutionLog.decision == decision)
+        return query.order_by(ExecutionLog.timestamp.desc()).limit(limit).all()
+
+    def get_execution_stats(self, orchestrator_id: str = None, days: int = 7) -> dict:
+        """Bereken execution statistieken per decision type."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        query = self.db.query(
+            ExecutionLog.decision,
+            func.count(ExecutionLog.id).label("count"),
+        ).filter(ExecutionLog.timestamp >= cutoff)
+        if orchestrator_id:
+            query = query.filter(ExecutionLog.orchestrator_id == orchestrator_id)
+        rows = query.group_by(ExecutionLog.decision).all()
+        stats = {row.decision: row.count for row in rows}
+        stats["total"] = sum(stats.values())
+        return stats
 
     # ── Strategy State ─────────────────
 

@@ -21,19 +21,45 @@ DATA_DIR = Path("data")
 
 
 def load_executions(orch_id: str, since: datetime = None) -> list[dict]:
-    """Laad ExecutionReports voor een orchestrator."""
-    path = DATA_DIR / f"executions_orch_{orch_id}.json"
-    if not path.exists():
-        return []
-
-    with open(path) as f:
-        entries = json.load(f)
-
-    if since:
-        since_str = since.isoformat()[:10]
-        entries = [e for e in entries if e.get("timestamp", "")[:10] >= since_str]
-
-    return entries
+    """Laad ExecutionReports voor een orchestrator uit de database."""
+    try:
+        from nakedtrader.db.repository import DataRepository
+        repo = DataRepository()
+        logs = repo.get_execution_reports(orchestrator_id=orch_id, limit=10_000)
+        entries = []
+        for e in logs:
+            ts_str = str(e.timestamp) if e.timestamp else ""
+            if since and ts_str[:10] < since.isoformat()[:10]:
+                continue
+            entries.append({
+                "timestamp": ts_str,
+                "orchestrator_id": e.orchestrator_id,
+                "decision": e.decision,
+                "reason": e.reason,
+                "rule_triggered": e.rule_triggered,
+                "risk_score": e.risk_score,
+                "drawdown_pct": e.drawdown_pct,
+                "size_executed": e.size_executed,
+                "signal": {
+                    "symbol": e.symbol,
+                    "strategy_id": e.strategy_id,
+                },
+            })
+        repo.close()
+        # Oudste eerst (DB retourneert nieuwste eerst)
+        entries.reverse()
+        return entries
+    except Exception:
+        # Fallback naar JSON
+        path = DATA_DIR / f"executions_orch_{orch_id}.json"
+        if not path.exists():
+            return []
+        with open(path) as f:
+            entries = json.load(f)
+        if since:
+            since_str = since.isoformat()[:10]
+            entries = [e for e in entries if e.get("timestamp", "")[:10] >= since_str]
+        return entries
 
 
 def analyze(entries: list[dict]) -> dict:

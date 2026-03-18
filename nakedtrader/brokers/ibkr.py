@@ -10,7 +10,7 @@ from typing import Optional
 
 from nakedtrader.brokers.base import AbstractBroker
 from nakedtrader.types import TradeSignal
-from nakedtrader.exceptions import IBKRError
+from nakedtrader.exceptions import IBKRError, BrokerConnectionError, BrokerOrderError
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class IBKRBroker(AbstractBroker):
             self._connected = True
             log.info(f"IBKR verbonden {self.config.ibkr_host}:{self.config.ibkr_port}")
             return True
-        except Exception as e:
+        except (IBKRError, ConnectionError, OSError, TimeoutError) as e:
             log.error(f"Kan niet verbinden met {self.config.ibkr_host}:{self.config.ibkr_port}: {e}")
             self._connected = False
             return False
@@ -64,7 +64,7 @@ class IBKRBroker(AbstractBroker):
             for item in summary:
                 if item.tag == 'TotalCashValue' and item.currency == 'EUR':
                     return float(item.value)
-        except Exception as e:
+        except (IBKRError, ConnectionError, ValueError) as e:
             log.error(f"Fout bij ophalen balans: {e}")
         
         return 0.0
@@ -83,7 +83,7 @@ class IBKRBroker(AbstractBroker):
                     symbol = pos.contract.symbol
                     market_value = pos.position * pos.avgCost # Benadering, beter is marketPrice
                     positions[symbol] = market_value
-        except Exception as e:
+        except (IBKRError, ConnectionError, AttributeError) as e:
             log.error(f"Fout bij ophalen posities: {e}")
             
         return positions
@@ -177,7 +177,7 @@ class IBKRBroker(AbstractBroker):
                 "tp": profit_price
             }
 
-        except Exception as e:
+        except (IBKRError, ConnectionError, ValueError, AttributeError) as e:
             log.error(f"Fout bij plaatsen order {symbol}: {e}")
             return None
 

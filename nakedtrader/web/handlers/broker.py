@@ -1,7 +1,15 @@
-"""Broker portfolio endpoints (Kraken + IBKR live data)."""
+"""Broker portfolio endpoints (Kraken + IBKR live & paper data).
+
+IBKR Gateway doet dagelijks een auto-restart (standaard 01:00 CET).
+Tijdens die restart wordt de API-connectie verbroken. Dit module
+detecteert stale connecties en reconnect automatisch.
+"""
 
 import json
 import logging
+import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime as dt, timedelta
 from pathlib import Path
 
@@ -9,14 +17,187 @@ from nakedtrader.utils import atomic_write_json
 
 log = logging.getLogger(__name__)
 
+# ── Persistent IBKR connections (live + paper) ──
+
+_ibkr_lock = threading.Lock()
+_ibkr_conns = {}          # port -> ib_async.IB instance
+_ibkr_last_ok = {}        # port -> timestamp van laatste succesvolle query
+_ibkr_backoff_until = {}  # port -> timestamp tot wanneer we niet opnieuw proberen
+
+IBKR_LIVE_PORT = 4001
+IBKR_PAPER_PORT = 4002
+IBKR_TIMEOUT = 8          # harde timeout per query (seconden)
+IBKR_RECONNECT_BACKOFF = 30   # na een mislukte connectie, wacht X seconden
+IBKR_STALE_THRESHOLD = 300    # als laatste success >5 min geleden, forceer reconnect
+
+_ibkr_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="ibkr")
+
+
+def _disconnect_ibkr(port):
+    """Verwijder en sluit een IBKR-connectie voor een poort. Caller moet _ibkr_lock houden."""
+    ib = _ibkr_conns.pop(port, None)
+    if ib:
+        try:
+            ib.disconnect()
+        except Exception:
+            pass
+
+
+def _get_ibkr(host, port, client_id):
+    """Return een IBKR-connectie, met reconnect na Gateway restart."""
+    with _ibkr_lock:
+        # Backoff: niet opnieuw proberen als we recent gefaald zijn
+        backoff = _ibkr_backoff_until.get(port, 0)
+        if time.monotonic() < backoff:
+            raise ConnectionError(f"IBKR port {port} in backoff tot {backoff:.0f}")
+
+        ib = _ibkr_conns.get(port)
+
+        # Forceer reconnect als connectie stale is (bv. na Gateway daily restart)
+        last_ok = _ibkr_last_ok.get(port, 0)
+        if ib is not None and last_ok > 0 and (time.monotonic() - last_ok) > IBKR_STALE_THRESHOLD:
+            log.info("IBKR port %d: laatste success %.0fs geleden, forceer reconnect", port, time.monotonic() - last_ok)
+            _disconnect_ibkr(port)
+            ib = None
+
+        if ib is not None and ib.isConnected():
+            return ib
+
+        # Oude connectie opruimen
+        if ib is not None:
+            _disconnect_ibkr(port)
+
+        from ib_async import IB
+        try:
+            ib = IB()
+            ib.connect(host, port, clientId=client_id, timeout=5)
+            _ibkr_conns[port] = ib
+            _ibkr_last_ok[port] = time.monotonic()
+            _ibkr_backoff_until.pop(port, None)
+            log.info("IBKR connectie hersteld (port %d, client %d)", port, client_id)
+            return ib
+        except Exception as e:
+            _ibkr_backoff_until[port] = time.monotonic() + IBKR_RECONNECT_BACKOFF
+            log.warning("IBKR port %d connect mislukt, backoff %ds: %s", port, IBKR_RECONNECT_BACKOFF, e)
+            raise
+
+
+def _query_ibkr_account_inner(host, port, client_id):
+    """Query een IBKR account (draait in thread pool)."""
+    ib = _get_ibkr(host, port, client_id)
+    summary = ib.accountSummary()
+    cash = 0.0
+    total = 0.0
+    for item in summary:
+        if item.currency != "EUR":
+            continue
+        if item.tag == "TotalCashValue":
+            cash = float(item.value)
+        elif item.tag == "NetLiquidation":
+            total = float(item.value)
+
+    positions = []
+    for p in ib.portfolio():
+        positions.append({
+            "symbol": p.contract.symbol, "asset": p.contract.symbol,
+            "quantity": p.position, "price_eur": round(p.marketPrice, 2),
+            "value_eur": round(p.marketValue, 2),
+        })
+
+    # Markeer success
+    with _ibkr_lock:
+        _ibkr_last_ok[port] = time.monotonic()
+
+    return {
+        "connected": True, "cash_eur": round(cash, 2),
+        "positions": positions, "total_eur": round(total, 2),
+    }
+
+
+def _query_ibkr_account(host, port, client_id):
+    """Query een IBKR account met harde timeout en auto-reconnect."""
+    try:
+        future = _ibkr_executor.submit(_query_ibkr_account_inner, host, port, client_id)
+        return future.result(timeout=IBKR_TIMEOUT)
+    except FuturesTimeout:
+        log.warning("IBKR port %d timeout na %ds — stale connectie verwijderd", port, IBKR_TIMEOUT)
+        with _ibkr_lock:
+            _disconnect_ibkr(port)
+            _ibkr_backoff_until[port] = time.monotonic() + IBKR_RECONNECT_BACKOFF
+        return None
+    except Exception as e:
+        log.debug("IBKR port %d niet beschikbaar: %s", port, e)
+        return None
+
+
+def _query_ibkr_fills(host, port, client_id):
+    """Haal IBKR fills/trades op met timeout-bescherming."""
+    def _inner():
+        ib = _get_ibkr(host, port, client_id)
+        txs = []
+        for fill in ib.fills():
+            ex = fill.execution
+            comm = fill.commissionReport
+            txs.append({
+                "id": ex.execId,
+                "broker": "IBKR",
+                "time": ex.time.timestamp() if hasattr(ex.time, 'timestamp') else 0,
+                "pair": ex.contract.symbol if hasattr(ex, 'contract') else getattr(ex, 'symbol', '?'),
+                "side": ex.side,
+                "price": ex.price,
+                "quantity": ex.shares,
+                "cost": round(ex.price * ex.shares, 2),
+                "fee": comm.commission if comm and comm.commission < 1e9 else 0,
+            })
+        seen_ids = {t["id"] for t in txs}
+        for trade in ib.reqCompletedOrders(apiOnly=False):
+            for fill in (trade.fills or []):
+                ex = fill.execution
+                if ex.execId in seen_ids:
+                    continue
+                comm = fill.commissionReport
+                txs.append({
+                    "id": ex.execId,
+                    "broker": "IBKR",
+                    "time": ex.time.timestamp() if hasattr(ex.time, 'timestamp') else 0,
+                    "pair": trade.contract.symbol if trade.contract else '?',
+                    "side": ex.side,
+                    "price": ex.price,
+                    "quantity": ex.shares,
+                    "cost": round(ex.price * ex.shares, 2),
+                    "fee": comm.commission if comm and comm.commission < 1e9 else 0,
+                })
+        with _ibkr_lock:
+            _ibkr_last_ok[port] = time.monotonic()
+        return txs
+
+    try:
+        future = _ibkr_executor.submit(_inner)
+        return future.result(timeout=IBKR_TIMEOUT)
+    except FuturesTimeout:
+        log.warning("IBKR fills timeout na %ds", IBKR_TIMEOUT)
+        with _ibkr_lock:
+            _disconnect_ibkr(port)
+            _ibkr_backoff_until[port] = time.monotonic() + IBKR_RECONNECT_BACKOFF
+        return []
+    except Exception as e:
+        log.debug("IBKR fills niet beschikbaar: %s", e)
+        return []
+
 
 def serve_broker_portfolio(handler, project_root, config):
-    """GET /api/broker/portfolio — Kraken + IBKR live balances & positions."""
+    """GET /api/broker/portfolio — Kraken + IBKR live + IBKR paper."""
     try:
         import krakenex
         import os
 
-        result = {"kraken": None, "ibkr": None, "total_eur": 0.0}
+        result = {
+            "kraken": None,
+            "ibkr_live": None,
+            "ibkr": None,  # backward compat
+            "total_eur": 0.0,
+            "paper_mode": config.paper_mode,
+        }
 
         # ── Kraken ──
         api_key = os.getenv("KRAKEN_API_KEY", "").strip()
@@ -71,41 +252,16 @@ def serve_broker_portfolio(handler, project_root, config):
             }
             result["total_eur"] += trade_balance
 
-        # ── IBKR ──
-        try:
-            from ib_async import IB
-            ib = IB()
-            ib.connect(config.ibkr_host, config.ibkr_port, clientId=config.ibkr_client_id + 10, timeout=5)
-            summary = ib.accountSummary()
-            ibkr_cash = 0.0
-            ibkr_total = 0.0
-            for item in summary:
-                if item.currency != "EUR":
-                    continue
-                if item.tag == "TotalCashValue":
-                    ibkr_cash = float(item.value)
-                elif item.tag == "NetLiquidation":
-                    ibkr_total = float(item.value)
+        # ── IBKR Live (port 4001) ──
+        live = _query_ibkr_account(config.ibkr_host, IBKR_LIVE_PORT, config.ibkr_client_id + 10)
+        if live:
+            result["ibkr_live"] = live
+            result["total_eur"] += live["total_eur"]
 
-            ibkr_positions = []
-            for p in ib.portfolio():
-                ibkr_positions.append({
-                    "symbol": p.contract.symbol, "asset": p.contract.symbol,
-                    "quantity": p.position, "price_eur": round(p.marketPrice, 2),
-                    "value_eur": round(p.marketValue, 2),
-                })
-            ib.disconnect()
-            result["ibkr"] = {
-                "connected": True, "cash_eur": round(ibkr_cash, 2),
-                "positions": ibkr_positions, "total_eur": round(ibkr_total, 2),
-            }
-            result["total_eur"] += ibkr_total
-        except Exception as ibkr_err:
-            log.debug("IBKR niet beschikbaar: %s", ibkr_err)
-            result["ibkr"] = {
-                "connected": False, "cash_eur": 0.0, "positions": [],
-                "total_eur": 0.0, "note": str(ibkr_err),
-            }
+        # Backward compat
+        result["ibkr"] = live or {
+            "connected": False, "cash_eur": 0.0, "positions": [], "total_eur": 0.0,
+        }
 
         try:
             _record_broker_snapshot(result, project_root, config)
@@ -126,12 +282,13 @@ def _record_broker_snapshot(portfolio_data, project_root, config):
     entry = {
         "timestamp": dt.now().isoformat(timespec="seconds"),
         "total_eur": portfolio_data.get("total_eur", 0.0),
-        "kraken_eur": 0.0, "ibkr_eur": 0.0,
+        "kraken_eur": 0.0,
+        "ibkr_eur": 0.0,
     }
     if portfolio_data.get("kraken"):
         entry["kraken_eur"] = portfolio_data["kraken"].get("total_eur", 0.0)
-    if portfolio_data.get("ibkr"):
-        entry["ibkr_eur"] = portfolio_data["ibkr"].get("total_eur", 0.0)
+    if portfolio_data.get("ibkr_live"):
+        entry["ibkr_eur"] = portfolio_data["ibkr_live"].get("total_eur", 0.0)
 
     history = []
     if history_path.exists():
@@ -150,6 +307,58 @@ def _record_broker_snapshot(portfolio_data, project_root, config):
     if len(history) > 50_000:
         history = history[-50_000:]
     atomic_write_json(history_path, history)
+
+
+def serve_broker_transactions(handler, params, project_root, config):
+    """GET /api/broker/transactions — Recent Kraken + IBKR trades."""
+    try:
+        import os
+        txs = []
+
+        # ── Kraken trades ──
+        try:
+            import krakenex
+            api_key = os.getenv("KRAKEN_API_KEY", "").strip()
+            api_secret = os.getenv("KRAKEN_API_SECRET", "").strip()
+            if api_key and api_secret:
+                api = krakenex.API(key=api_key, secret=api_secret)
+                resp = api.query_private("TradesHistory", {"trades": True})
+                if not resp.get("error"):
+                    for tid, t in resp["result"].get("trades", {}).items():
+                        pair = t.get("pair", "")
+                        pretty = pair
+                        for old, new in [("XXBT", "BTC"), ("XETH", "ETH"), ("ZEUR", "EUR"), ("ZUSD", "USD")]:
+                            pretty = pretty.replace(old, new)
+                        if "/" not in pretty:
+                            for quote in ["EUR", "USD", "BTC", "ETH", "USDT"]:
+                                if pretty.endswith(quote) and len(pretty) > len(quote):
+                                    pretty = pretty[:-len(quote)] + "/" + quote
+                                    break
+                        txs.append({
+                            "id": tid,
+                            "broker": "Kraken",
+                            "time": t.get("time", 0),
+                            "pair": pretty,
+                            "side": t.get("type", "").upper(),
+                            "price": float(t.get("price", 0)),
+                            "quantity": float(t.get("vol", 0)),
+                            "cost": float(t.get("cost", 0)),
+                            "fee": float(t.get("fee", 0)),
+                        })
+        except Exception as e:
+            log.debug("Kraken trades fout: %s", e)
+
+        # ── IBKR fills (met timeout-bescherming) ──
+        ibkr_txs = _query_ibkr_fills(config.ibkr_host, IBKR_LIVE_PORT, config.ibkr_client_id + 10)
+        txs.extend(ibkr_txs)
+
+        # Sort by time descending, limit
+        txs.sort(key=lambda t: t.get("time", 0), reverse=True)
+        limit = int(params.get("limit", ["50"])[0])
+        handler._json(200, {"transactions": txs[:limit]})
+    except Exception as e:
+        log.warning("Broker transactions fout: %s", e)
+        handler._json(500, {"error": str(e)})
 
 
 def serve_broker_history(handler, params, project_root, config):

@@ -181,7 +181,96 @@ class IBKRBroker(AbstractBroker):
             log.error(f"Fout bij plaatsen order {symbol}: {e}")
             return None
 
-    # Oude methodes behouden voor compatibiliteit indien nodig, maar wrapper-functies
+    @property
+    def is_connected(self) -> bool:
+        """Controleer of IBKR verbinding actief is."""
+        return self._connected and self.ib is not None and self.ib.isConnected()
+
+    def get_stock_bars(
+        self,
+        symbol: str,
+        duration: str = "1 Y",
+        bar_size: str = "1 day",
+        exchange: str = "SMART",
+        currency: str = "USD",
+    ) -> list:
+        """Haal historische bars op voor aandelen/ETFs via IBKR.
+
+        Returns:
+            Lijst van BarData objecten met .open, .high, .low, .close, .volume.
+            Leeg bij fout.
+        """
+        if not self.is_connected:
+            return []
+        try:
+            from ib_async import Stock
+            contract = Stock(symbol, exchange, currency)
+            self.ib.qualifyContracts(contract)
+            bars = self.ib.reqHistoricalData(
+                contract,
+                endDateTime="",
+                durationStr=duration,
+                barSizeSetting=bar_size,
+                whatToShow="TRADES",
+                useRTH=True,
+                formatDate=1,
+            )
+            return bars or []
+        except (IBKRError, ConnectionError, OSError, TimeoutError, ValueError) as e:
+            log.warning("get_stock_bars %s mislukt: %s", symbol, e)
+            return []
+
+    def get_historical_bars(
+        self,
+        symbol: str,
+        duration: str = "1 Y",
+        bar_size: str = "1 day",
+        what_to_show: str = "MIDPOINT",
+        currency: str = "USD",
+    ) -> list:
+        """Haal historische bars op voor forex via IBKR.
+
+        Returns:
+            Lijst van BarData objecten. Leeg bij fout.
+        """
+        if not self.is_connected:
+            return []
+        try:
+            from ib_async import Forex
+            contract = Forex(symbol)
+            self.ib.qualifyContracts(contract)
+            bars = self.ib.reqHistoricalData(
+                contract,
+                endDateTime="",
+                durationStr=duration,
+                barSizeSetting=bar_size,
+                whatToShow=what_to_show,
+                useRTH=True,
+                formatDate=1,
+            )
+            return bars or []
+        except (IBKRError, ConnectionError, OSError, TimeoutError, ValueError) as e:
+            log.warning("get_historical_bars %s mislukt: %s", symbol, e)
+            return []
+
+    def get_stock_price(self, symbol: str, currency: str = "USD") -> float:
+        """Haal huidige prijs op voor een aandeel/ETF. Retourneert 0.0 bij fout."""
+        if not self.is_connected:
+            return 0.0
+        try:
+            from ib_async import Stock, util
+            contract = Stock(symbol, "SMART", currency)
+            self.ib.qualifyContracts(contract)
+            ticker = self.ib.reqMktData(contract, "", False, False)
+            util.sleep(2)
+            price = ticker.marketPrice()
+            self.ib.cancelMktData(contract)
+            return float(price) if price and price == price else 0.0  # NaN check
+        except (IBKRError, ConnectionError, OSError, TimeoutError, ValueError) as e:
+            log.warning("get_stock_price %s mislukt: %s", symbol, e)
+            return 0.0
+
     def get_price(self, symbol: str) -> Optional[float]:
-        # Implementatie zoals voorheen
-        pass
+        """Legacy price method."""
+        p = self.get_stock_price(symbol)
+        return p if p > 0 else None

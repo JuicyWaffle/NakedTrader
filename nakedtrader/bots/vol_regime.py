@@ -45,13 +45,13 @@ class VolRegimeStrategy(BaseStrategy):
         risk_score=2,
         expected_return_min=8.0,
         expected_return_max=30.0,
-        markets=["BTC/EUR", "ETH/EUR"],
+        markets=["BTC/EUR", "ETH/EUR", "AVAX/EUR"],
         indicators=["VIX proxy", "SMA(20)", "Fear & Greed", "Funding Rate"],
         timeframe="4h",
         broker="kraken",
     )
 
-    OFFENSIVE_PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR"}
+    OFFENSIVE_PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "AVAX/EUR": "AVAXEUR"}
     VIX_HIGH_THRESHOLD = 25.0   # boven = defensief regime
     VIX_LOW_THRESHOLD = 18.0    # onder = offensief regime
 

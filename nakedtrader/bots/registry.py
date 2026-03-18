@@ -10,6 +10,7 @@ from .trend import TrendFollowingStrategy
 from .funding_rate import FundingRateStrategy
 from .cross_arb import CrossArbStrategy
 from .vol_regime import VolRegimeStrategy
+from .equity_momentum import EquityMomentumStrategy
 
 STRATEGIES = {
     "momentum": MomentumStrategy(),
@@ -20,6 +21,7 @@ STRATEGIES = {
     "funding-contrarian": FundingRateStrategy(),
     "cross-arb": CrossArbStrategy(),
     "vol-regime": VolRegimeStrategy(),
+    "equity-momentum": EquityMomentumStrategy(),
 }
 
 

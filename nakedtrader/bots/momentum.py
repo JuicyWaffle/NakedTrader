@@ -33,13 +33,17 @@ class MomentumStrategy(BaseStrategy):
         risk_score=3,
         expected_return_min=15.0,
         expected_return_max=45.0,
-        markets=["BTC/EUR", "ETH/EUR", "SOL/EUR", "ADA/EUR"],
+        markets=["BTC/EUR", "ETH/EUR", "SOL/EUR", "ADA/EUR", "DOT/EUR", "AVAX/EUR", "LINK/EUR"],
         indicators=["EMA(9/21)", "RSI(14)", "ATR(14)"],
         timeframe="1h",
         broker="kraken",
     )
 
-    PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/EUR": "SOLEUR", "ADA/EUR": "ADAEUR"}
+    PAIRS = {
+        "BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/EUR": "SOLEUR",
+        "ADA/EUR": "ADAEUR", "DOT/EUR": "DOTEUR", "AVAX/EUR": "AVAXEUR",
+        "LINK/EUR": "LINKEUR",
+    }
 
     def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []

@@ -35,13 +35,16 @@ class MeanReversionStrategy(BaseStrategy):
         risk_score=2,
         expected_return_min=8.0,
         expected_return_max=25.0,
-        markets=["BTC/EUR", "ETH/EUR", "SOL/EUR"],
+        markets=["BTC/EUR", "ETH/EUR", "SOL/EUR", "DOT/EUR", "LINK/EUR"],
         indicators=["BB(20)", "Z-score(20)", "VIX proxy"],
         timeframe="15m",
         broker="kraken",
     )
 
-    PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/EUR": "SOLEUR"}
+    PAIRS = {
+        "BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/EUR": "SOLEUR",
+        "DOT/EUR": "DOTEUR", "LINK/EUR": "LINKEUR",
+    }
 
     def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []

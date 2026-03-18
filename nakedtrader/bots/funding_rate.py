@@ -32,7 +32,7 @@ class FundingRateStrategy(BaseStrategy):
         risk_score=3,
         expected_return_min=10.0,
         expected_return_max=35.0,
-        markets=["BTC/EUR", "ETH/EUR"],
+        markets=["BTC/EUR", "ETH/EUR", "LINK/EUR", "AVAX/EUR"],
         indicators=["Funding Rate", "RSI(14)", "Open Interest"],
         timeframe="8h",
         broker="kraken",
@@ -41,6 +41,8 @@ class FundingRateStrategy(BaseStrategy):
     PAIRS = {
         "BTC/EUR": {"kraken": "XXBTZEUR", "binance": "BTCUSDT"},
         "ETH/EUR": {"kraken": "XETHZEUR", "binance": "ETHUSDT"},
+        "LINK/EUR": {"kraken": "LINKEUR", "binance": "LINKUSDT"},
+        "AVAX/EUR": {"kraken": "AVAXEUR", "binance": "AVAXUSDT"},
     }
 
     HIGH_FUNDING_THRESHOLD = 0.0005    # 0.05% per 8h

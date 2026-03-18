@@ -33,13 +33,16 @@ class BreakoutStrategy(BaseStrategy):
         risk_score=5,
         expected_return_min=-10.0,
         expected_return_max=60.0,
-        markets=["BTC/EUR", "ETH/EUR", "SOL/USD"],
+        markets=["BTC/EUR", "ETH/EUR", "SOL/USD", "AVAX/EUR", "MATIC/EUR"],
         indicators=["Donchian(20)", "ATR(14)"],
         timeframe="4h",
         broker="ibkr+kraken",
     )
 
-    PAIRS = {"BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/USD": "SOLUSD"}
+    PAIRS = {
+        "BTC/EUR": "XXBTZEUR", "ETH/EUR": "XETHZEUR", "SOL/USD": "SOLUSD",
+        "AVAX/EUR": "AVAXEUR", "MATIC/EUR": "MATICEUR",
+    }
 
     def generate_signals(self, kraken=None, ibkr=None, aggressive=False) -> list[TradeSignal]:
         signals = []

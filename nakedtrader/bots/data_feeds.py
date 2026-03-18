@@ -27,6 +27,12 @@ log = logging.getLogger(__name__)
 _ticker_cache: dict[str, tuple[float, float]] = {}
 _TICKER_TTL = 5.0  # seconden
 
+# ── yfinance caches ─────────────────────────────────────
+_yf_bars_cache: dict[str, tuple[float, dict]] = {}
+_YF_BARS_TTL = 300.0  # 5 minuten
+_yf_ticker_cache: dict[str, tuple[float, float]] = {}
+_YF_TICKER_TTL = 60.0  # 1 minuut
+
 
 def _kraken_ohlc(pair: str, interval: int = 60, count: int = 200) -> dict:
     """
@@ -255,3 +261,62 @@ def _cross_exchange_orderbook(asset: str = "BTC") -> dict:
         }
 
     return result
+
+
+# ── yfinance data feeds (aandelen/ETFs fallback) ─────────────
+
+def _yfinance_daily_bars(symbol: str, period: str = "1y") -> dict:
+    """Haal dagelijkse bars op via yfinance (gratis, geen auth).
+
+    Returns:
+        dict met numpy arrays: open, high, low, close, volume, time.
+        Leeg dict bij fout.
+    """
+    now = time.monotonic()
+    cache_key = f"{symbol}_{period}"
+    cached = _yf_bars_cache.get(cache_key)
+    if cached and (now - cached[0]) < _YF_BARS_TTL:
+        return cached[1]
+
+    try:
+        import yfinance as yf
+        df = yf.download(symbol, period=period, interval="1d", progress=False, auto_adjust=True)
+        if df is None or df.empty:
+            return {}
+        # Flatten multi-level columns (yfinance retourneert soms MultiIndex)
+        if hasattr(df.columns, 'levels'):
+            df.columns = df.columns.get_level_values(0)
+        result = {
+            "time": np.array([t.timestamp() for t in df.index], dtype=float),
+            "open": df["Open"].to_numpy(dtype=float),
+            "high": df["High"].to_numpy(dtype=float),
+            "low": df["Low"].to_numpy(dtype=float),
+            "close": df["Close"].to_numpy(dtype=float),
+            "volume": df["Volume"].to_numpy(dtype=float),
+        }
+        _yf_bars_cache[cache_key] = (now, result)
+        return result
+    except Exception as e:
+        log.warning("yfinance bars %s mislukt: %s", symbol, e)
+        return {}
+
+
+def _yfinance_ticker(symbol: str) -> Optional[float]:
+    """Haal laatste prijs op via yfinance (cached, TTL 60s)."""
+    now = time.monotonic()
+    cached = _yf_ticker_cache.get(symbol)
+    if cached and (now - cached[0]) < _YF_TICKER_TTL:
+        return cached[1]
+
+    try:
+        import yfinance as yf
+        tk = yf.Ticker(symbol)
+        info = tk.fast_info
+        price = getattr(info, "last_price", None) or getattr(info, "previous_close", None)
+        if price and price > 0:
+            _yf_ticker_cache[symbol] = (now, float(price))
+            return float(price)
+        return None
+    except Exception as e:
+        log.warning("yfinance ticker %s mislukt: %s", symbol, e)
+        return None

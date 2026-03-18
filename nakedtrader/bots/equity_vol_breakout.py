@@ -32,7 +32,7 @@ class EquityVolBreakoutStrategy(BaseStrategy):
         expected_return_min=-5.0,
         expected_return_max=50.0,
         markets=[
-            "MSTR", "COIN", "SQ", "SHOP", "SNAP", "PLTR",
+            "MSTR", "COIN", "XYZ", "SHOP", "SNAP", "PLTR",
             "NET", "DKNG", "RBLX", "ROKU", "SOFI", "UPST",
             "ARKW", "ARKG", "SMH", "SOXX", "IBB",
             "GME", "AMC", "RIVN", "LCID",
@@ -45,7 +45,7 @@ class EquityVolBreakoutStrategy(BaseStrategy):
 
     UNIVERSE = {
         # High-beta tech
-        "MSTR": "tech-highbeta", "COIN": "fintech", "SQ": "fintech",
+        "MSTR": "tech-highbeta", "COIN": "fintech", "XYZ": "fintech",
         "SHOP": "tech", "SNAP": "tech", "PLTR": "tech",
         "NET": "tech", "DKNG": "gaming", "RBLX": "gaming",
         "ROKU": "tech", "SOFI": "fintech", "UPST": "fintech",

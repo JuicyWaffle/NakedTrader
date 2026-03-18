@@ -33,7 +33,7 @@ class DividendValueStrategy(BaseStrategy):
         markets=[
             "KO", "PG", "MMM", "T", "VZ", "IBM",
             "MO", "PM", "EMR", "ADP", "CL", "SYY",
-            "WBA", "BEN", "TROW",
+            "ABT", "BEN", "TROW",
             "O", "MAIN", "STAG",
             "EPD", "MPC", "PSX", "VLO",
             "VIG", "SCHD", "DVY", "HDV", "SPYD",
@@ -50,7 +50,7 @@ class DividendValueStrategy(BaseStrategy):
         "T": "telecom", "VZ": "telecom", "IBM": "tech",
         "MO": "staples", "PM": "staples", "EMR": "industrials",
         "ADP": "tech", "CL": "staples", "SYY": "staples",
-        "WBA": "healthcare", "BEN": "financials", "TROW": "financials",
+        "ABT": "healthcare", "BEN": "financials", "TROW": "financials",
         # High-Yield / REITs
         "O": "reit", "MAIN": "reit", "STAG": "reit",
         "EPD": "energy-mlp", "MPC": "energy", "PSX": "energy", "VLO": "energy",

@@ -195,7 +195,7 @@ STRATEGY_PROFILES = {
         "avg_loss_pct": 0.025,
         "win_stddev": 0.020,
         "loss_stddev": 0.010,
-        "symbols": ["MSTR", "COIN", "SQ", "PLTR", "SHOP", "SNAP", "GME", "RIVN", "SOFI"],
+        "symbols": ["MSTR", "COIN", "XYZ", "PLTR", "SHOP", "SNAP", "GME", "RIVN", "SOFI"],
         "broker": "ibkr",
         "base_price_range": (5, 400),
     },

@@ -2,10 +2,22 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from datetime import datetime
 
 log = logging.getLogger(__name__)
+
+_STRATEGY_TIMEOUT = 30  # seconden per strategie
+
+
+def _run_strategy(sid, strategy):
+    """Run een strategie in een worker thread."""
+    try:
+        return sid, strategy.generate_signals(), strategy.meta
+    except Exception as e:
+        log.warning("Strategie %s fout: %s", sid, e)
+        return sid, [], strategy.meta
 
 
 def serve_blitz_advice(handler, budget, project_root, config):
@@ -40,75 +52,81 @@ def serve_blitz_advice(handler, budget, project_root, config):
             max_position_pct=config.max_position_pct,
         )
 
-        # Verzamel signalen van alle actieve strategieën
-        advice_list = []
-        for sid, strategy in STRATEGIES.items():
-            if not strategy.meta.active:
-                continue
-            try:
-                signals = strategy.generate_signals()
-            except Exception as e:
-                log.warning("Strategie %s fout: %s", sid, e)
-                continue
-            if not signals:
-                continue
+        # Verzamel signalen van alle actieve strategieën (parallel)
+        active = {sid: s for sid, s in STRATEGIES.items() if s.meta.active}
+        all_signals = []
 
-            meta = strategy.meta
-            for sig in signals:
-                # Kelly sizing
-                fraction = kelly.calculate(
-                    sig.win_probability,
-                    sig.expected_win_pct,
-                    sig.expected_loss_pct,
-                )
-                # Pas macro kelly_mult toe
-                fraction *= macro["kelly_mult"]
-                size_eur = min(budget * fraction / config.max_position_pct, budget)
-                size_eur = max(size_eur, 0)
-
-                if size_eur < 10:
-                    continue
-
-                # Return schattingen op basis van StrategyMeta annual returns
-                ret_annual_min = meta.expected_return_min / 100
-                ret_annual_max = meta.expected_return_max / 100
-                ret_annual_avg = (ret_annual_min + ret_annual_max) / 2
-                wp = sig.win_probability
-                km = macro["kelly_mult"]
-
-                def _estimate(months):
-                    factor = months / 12
-                    return {
-                        "min": round(size_eur * ret_annual_min * factor * km * wp, 2),
-                        "max": round(size_eur * ret_annual_max * factor * km * wp, 2),
-                        "expected": round(size_eur * ret_annual_avg * factor * km * wp, 2),
-                    }
-
-                # Strategy fit score
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {
+                pool.submit(_run_strategy, sid, s): sid
+                for sid, s in active.items()
+            }
+            for future in as_completed(futures, timeout=60):
                 try:
-                    fit = macro_engine.strategy_fit(sid, [sig])
-                except Exception:
-                    fit = 0.0
+                    sid, signals, meta = future.result(timeout=_STRATEGY_TIMEOUT)
+                    if signals:
+                        all_signals.extend((sig, meta) for sig in signals)
+                except Exception as e:
+                    log.warning("Strategie %s timeout/fout: %s", futures[future], e)
 
-                advice_list.append({
-                    "symbol": sig.symbol,
-                    "strategy_id": sid,
-                    "strategy_name": meta.name,
-                    "direction": sig.direction,
-                    "current_price": sig.current_price,
-                    "size_eur": round(size_eur, 2),
-                    "return_1m": _estimate(1),
-                    "return_3m": _estimate(3),
-                    "risk_level": meta.risk_level,
-                    "risk_score": meta.risk_score,
-                    "win_probability": round(sig.win_probability, 3),
-                    "expected_win_pct": sig.expected_win_pct,
-                    "expected_loss_pct": sig.expected_loss_pct,
-                    "strategy_fit": round(fit, 2),
-                    "broker": meta.broker,
-                    "notes": sig.notes,
-                    "ai_reasoning": None,
-                })
+        advice_list = []
+        for sig, meta in all_signals:
+            # Kelly sizing
+            fraction = kelly.calculate(
+                sig.win_probability,
+                sig.expected_win_pct,
+                sig.expected_loss_pct,
+            )
+            # Pas macro kelly_mult toe
+            fraction *= macro["kelly_mult"]
+            size_eur = min(budget * fraction / config.max_position_pct, budget)
+            size_eur = max(size_eur, 0)
+
+            if size_eur < 10:
+                continue
+
+            # Return schattingen op basis van StrategyMeta annual returns
+            ret_annual_min = meta.expected_return_min / 100
+            ret_annual_max = meta.expected_return_max / 100
+            ret_annual_avg = (ret_annual_min + ret_annual_max) / 2
+            wp = sig.win_probability
+            km = macro["kelly_mult"]
+
+            def _estimate(months, sz=size_eur, rmin=ret_annual_min,
+                          rmax=ret_annual_max, ravg=ret_annual_avg,
+                          _km=km, _wp=wp):
+                factor = months / 12
+                return {
+                    "min": round(sz * rmin * factor * _km * _wp, 2),
+                    "max": round(sz * rmax * factor * _km * _wp, 2),
+                    "expected": round(sz * ravg * factor * _km * _wp, 2),
+                }
+
+            # Strategy fit score
+            try:
+                fit = macro_engine.strategy_fit(sig.strategy_id, [sig])
+            except Exception:
+                fit = 0.0
+
+            advice_list.append({
+                "symbol": sig.symbol,
+                "strategy_id": sig.strategy_id,
+                "strategy_name": meta.name,
+                "direction": sig.direction,
+                "current_price": sig.current_price,
+                "size_eur": round(size_eur, 2),
+                "return_1m": _estimate(1),
+                "return_3m": _estimate(3),
+                "risk_level": meta.risk_level,
+                "risk_score": meta.risk_score,
+                "win_probability": round(sig.win_probability, 3),
+                "expected_win_pct": sig.expected_win_pct,
+                "expected_loss_pct": sig.expected_loss_pct,
+                "strategy_fit": round(fit, 2),
+                "broker": meta.broker,
+                "notes": sig.notes,
+                "ai_reasoning": None,
+            })
 
         # Sorteer op verwacht rendement 3M (descending)
         advice_list.sort(key=lambda a: a["return_3m"]["expected"], reverse=True)

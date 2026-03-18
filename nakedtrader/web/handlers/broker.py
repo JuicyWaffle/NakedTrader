@@ -275,20 +275,21 @@ def serve_broker_portfolio(handler, project_root, config):
 
 
 def _record_broker_snapshot(portfolio_data, project_root, config):
-    """Append broker portfolio value snapshot to history file."""
+    """Append broker portfolio value snapshot to history file.
+
+    Als een broker (Kraken/IBKR) tijdelijk niet bereikbaar is, wordt de
+    laatst bekende waarde overgenomen (forward-fill) zodat de grafiek
+    geen valse dalingen toont.
+    """
     data_dir = Path(str(project_root / config.data_dir))
     history_path = data_dir / "broker_portfolio_history.json"
 
-    entry = {
-        "timestamp": dt.now().isoformat(timespec="seconds"),
-        "total_eur": portfolio_data.get("total_eur", 0.0),
-        "kraken_eur": 0.0,
-        "ibkr_eur": 0.0,
-    }
+    kraken_eur = 0.0
+    ibkr_eur = 0.0
     if portfolio_data.get("kraken"):
-        entry["kraken_eur"] = portfolio_data["kraken"].get("total_eur", 0.0)
+        kraken_eur = portfolio_data["kraken"].get("total_eur", 0.0)
     if portfolio_data.get("ibkr_live"):
-        entry["ibkr_eur"] = portfolio_data["ibkr_live"].get("total_eur", 0.0)
+        ibkr_eur = portfolio_data["ibkr_live"].get("total_eur", 0.0)
 
     history = []
     if history_path.exists():
@@ -302,6 +303,22 @@ def _record_broker_snapshot(portfolio_data, project_root, config):
         last_ts = history[-1].get("timestamp", "")
         if last_ts and last_ts >= (dt.now().replace(second=0)).isoformat(timespec="seconds"):
             return
+
+    # Forward-fill: als een broker 0 retourneert maar eerder data had,
+    # neem de laatst bekende reële waarde over
+    if history:
+        prev = history[-1]
+        if kraken_eur == 0 and prev.get("kraken_eur", 0) > 0:
+            kraken_eur = prev["kraken_eur"]
+        if ibkr_eur == 0 and prev.get("ibkr_eur", 0) > 0:
+            ibkr_eur = prev["ibkr_eur"]
+
+    entry = {
+        "timestamp": dt.now().isoformat(timespec="seconds"),
+        "total_eur": round(kraken_eur + ibkr_eur, 2),
+        "kraken_eur": kraken_eur,
+        "ibkr_eur": ibkr_eur,
+    }
 
     history.append(entry)
     if len(history) > 50_000:
@@ -361,6 +378,30 @@ def serve_broker_transactions(handler, params, project_root, config):
         handler._json(500, {"error": str(e)})
 
 
+def _forward_fill_history(history):
+    """Corrigeer bestaande history: vul missende broker-waarden aan
+    met de laatst bekende reële waarde (forward-fill)."""
+    last_kraken = 0.0
+    last_ibkr = 0.0
+    changed = False
+    for s in history:
+        k = s.get("kraken_eur", 0.0)
+        i = s.get("ibkr_eur", 0.0)
+        if k > 0:
+            last_kraken = k
+        elif last_kraken > 0:
+            s["kraken_eur"] = last_kraken
+            changed = True
+        if i > 0:
+            last_ibkr = i
+        elif last_ibkr > 0:
+            s["ibkr_eur"] = last_ibkr
+            changed = True
+        if changed:
+            s["total_eur"] = round(s.get("kraken_eur", 0) + s.get("ibkr_eur", 0), 2)
+    return history
+
+
 def serve_broker_history(handler, params, project_root, config):
     """GET /api/broker/history — Broker portfolio value history."""
     try:
@@ -373,6 +414,9 @@ def serve_broker_history(handler, params, project_root, config):
 
         with open(history_path) as f:
             history = json.load(f)
+
+        # Forward-fill missende broker-waarden in bestaande data
+        history = _forward_fill_history(history)
 
         hours = int(params.get("hours", ["0"])[0])
         if hours > 0:

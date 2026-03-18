@@ -102,6 +102,7 @@ def _query_ibkr_account_inner(host, port, client_id):
             "symbol": p.contract.symbol, "asset": p.contract.symbol,
             "quantity": p.position, "price_eur": round(p.marketPrice, 2),
             "value_eur": round(p.marketValue, 2),
+            "cost_price": round(p.averageCost, 2) if p.averageCost else None,
         })
 
     # Markeer success
@@ -185,6 +186,58 @@ def _query_ibkr_fills(host, port, client_id):
         return []
 
 
+def _kraken_avg_cost(api):
+    """Bereken gewogen gemiddelde aankoopprijs per asset uit Kraken trades.
+
+    Loopt door alle BUY trades en berekent cost basis.  SELL trades
+    verlagen het volume maar niet de gemiddelde prijs (FIFO-achtig).
+    """
+    # Map Kraken pair → base asset
+    PAIR_TO_ASSET = {
+        "XXBTZEUR": "XXBT", "XETHZEUR": "XETH", "SOLEUR": "SOL",
+        "ADAEUR": "ADA", "USDCEUR": "USDC", "STRKEUR": "STRK", "PAXGEUR": "PAXG",
+    }
+    cost_basis = {}  # asset -> {"total_cost": float, "total_qty": float}
+    try:
+        resp = api.query_private("TradesHistory", {"trades": True})
+        if resp.get("error"):
+            return {}
+        for _, t in resp["result"].get("trades", {}).items():
+            pair = t.get("pair", "")
+            # Normaliseer pair-naam
+            asset = None
+            for p, a in PAIR_TO_ASSET.items():
+                if pair == p or pair.replace(".", "") == p:
+                    asset = a
+                    break
+            if not asset:
+                continue
+            vol = float(t.get("vol", 0))
+            cost = float(t.get("cost", 0))
+            side = t.get("type", "")
+            if asset not in cost_basis:
+                cost_basis[asset] = {"total_cost": 0.0, "total_qty": 0.0}
+            if side == "buy":
+                cost_basis[asset]["total_cost"] += cost
+                cost_basis[asset]["total_qty"] += vol
+            elif side == "sell":
+                cb = cost_basis[asset]
+                if cb["total_qty"] > 0:
+                    avg = cb["total_cost"] / cb["total_qty"]
+                    sell_qty = min(vol, cb["total_qty"])
+                    cb["total_cost"] -= avg * sell_qty
+                    cb["total_qty"] -= sell_qty
+    except Exception as e:
+        log.debug("Kraken avg cost fout: %s", e)
+        return {}
+
+    result = {}
+    for asset, cb in cost_basis.items():
+        if cb["total_qty"] > 1e-8:
+            result[asset] = cb["total_cost"] / cb["total_qty"]
+    return result
+
+
 def serve_broker_portfolio(handler, project_root, config):
     """GET /api/broker/portfolio — Kraken + IBKR live + IBKR paper."""
     try:
@@ -223,6 +276,9 @@ def serve_broker_portfolio(handler, project_root, config):
                 "ADA": "ADAEUR", "USDC": "USDCEUR", "STRK": "STRKEUR", "PAXG": "PAXGEUR",
             }
 
+            # Bereken gemiddelde aankoopprijs per asset uit Kraken trades
+            avg_cost = _kraken_avg_cost(api)
+
             for asset, volume in raw_balances.items():
                 if asset in ("ZEUR", "ZUSD") or volume < 1e-6:
                     continue
@@ -240,10 +296,12 @@ def serve_broker_portfolio(handler, project_root, config):
                 value_eur = volume * price_eur
                 if value_eur < 0.10:
                     continue
+                cost_price = avg_cost.get(asset)
                 positions.append({
                     "asset": asset, "symbol": pair or asset,
                     "quantity": round(volume, 8), "price_eur": round(price_eur, 2),
                     "value_eur": round(value_eur, 2),
+                    "cost_price": round(cost_price, 2) if cost_price else None,
                 })
 
             result["kraken"] = {

@@ -26,6 +26,7 @@ from nakedtrader.performance.store import PerformanceStore
 from nakedtrader.web.handlers import broker as broker_h
 from nakedtrader.web.handlers import virtual_bank as vb_h
 from nakedtrader.web.handlers import orchestrator as orch_h
+from nakedtrader.web.handlers import blitz as blitz_h
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_file(PUBLIC_DIR / "performance.html", "text/html")
         elif path == "/assets":
             self._serve_file(PUBLIC_DIR / "assets.html", "text/html")
+        elif path == "/blitz":
+            self._serve_file(PUBLIC_DIR / "blitz.html", "text/html")
 
         # ── Chart API ────────────────────────────────
         elif path == "/api/charts/intraday":
@@ -119,12 +122,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/broker/portfolio":
             broker_h.serve_broker_portfolio(self, PROJECT_ROOT, _config)
 
+        elif path == "/api/broker/transactions":
+            broker_h.serve_broker_transactions(self, params, PROJECT_ROOT, _config)
+
         elif path == "/api/broker/history":
             broker_h.serve_broker_history(self, params, PROJECT_ROOT, _config)
 
         # ── Performance analysis ─────────────────────
         elif path == "/api/performance/analysis":
             self._serve_performance_analysis()
+
+        # ── Cash Monitor ───────────────────────────────
+        elif path == "/api/cash/status":
+            self._serve_cash_status()
+
+        # ── Bot Ranking ────────────────────────────────
+        elif path == "/api/bot-ranking":
+            self._serve_bot_ranking()
 
         # ── Orchestrator ─────────────────────────────
         elif path == "/api/orchestrator/status":
@@ -139,6 +153,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             period = params.get("period", [None])[0]
             since = params.get("since", [None])[0]
             orch_h.serve_compare(self, period, since, PROJECT_ROOT, _config)
+
+        # ── Blitz ──────────────────────────────────
+        elif path == "/api/blitz/advice":
+            budget = float(params.get("budget", ["500"])[0])
+            blitz_h.serve_blitz_advice(self, budget, PROJECT_ROOT, _config)
 
         # ── Static assets ────────────────────────────
         elif path.startswith("/public/"):
@@ -167,6 +186,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             pause_type = params.get("type", [None])[0]
             strategy_id = params.get("id", [None])[0]
             orch_h.do_pause(self, pause_type, strategy_id, False, PROJECT_ROOT, _config)
+
+        elif path == "/api/blitz/execute":
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length > 0 else {}
+            blitz_h.do_blitz_execute(self, body, PROJECT_ROOT, _config)
 
         else:
             self._json(404, {"error": "not found"})
@@ -261,6 +285,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._json(500, {"error": str(e)})
 
+    def _serve_cash_status(self):
+        try:
+            cash_path = PROJECT_ROOT / _config.data_dir / "cash_status.json"
+            if not cash_path.exists():
+                self._json(200, {"status": "no_data"})
+                return
+            with open(cash_path) as f:
+                self._json(200, json.load(f))
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
+    def _serve_bot_ranking(self):
+        try:
+            ranking_path = PROJECT_ROOT / _config.data_dir / "bot_ranking.json"
+            if not ranking_path.exists():
+                self._json(200, {"status": "no_data"})
+                return
+            with open(ranking_path) as f:
+                self._json(200, json.load(f))
+        except Exception as e:
+            self._json(500, {"error": str(e)})
+
     def _serve_performance_analysis(self):
         """Per-bot analyse: verwacht/effectief trades, rendement, kwalitatieve analyse."""
         try:
@@ -311,9 +357,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     "broker": profile["broker"],
                     "expected_trades_per_day": expected_tpd,
                     "actual_trades_yesterday": actual_yesterday,
-                    "return_1d": round(ret_1d, 3),
-                    "return_1m": round(ret_1m, 3),
-                    "return_3m": round(ret_3m, 3),
+                    "return_1d": round(ret_1d / 100, 5),
+                    "return_1m": round(ret_1m / 100, 5),
+                    "return_3m": round(ret_3m / 100, 5),
                     "win_rate": round(win_rate, 3),
                     "sharpe": round(sharpe, 2),
                     "in_cooldown": in_cooldown,

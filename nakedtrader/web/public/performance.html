@@ -228,6 +228,7 @@
     <a href="/strategies">Strategieen</a>
     <a href="/performance" class="active">Performance</a>
     <a href="/assets">Assets</a>
+    <a href="/blitz">Blitz</a>
   </nav>
   <div class="status-bar">
     <div class="status-dot"></div>
@@ -319,17 +320,17 @@ async function loadPerformance() {
           </div>
         </div>
 
-        <div class="bc-returns">
+        <div class="bc-returns" title="Rendement = som dagelijkse realized P&L / startkapitaal × 100. Enkel afgesloten trades.">
           <div class="bc-return-item">
-            <span class="bc-return-label">1 dag</span>
+            <span class="bc-return-label" title="Realized P&L van gisteren">1 dag ℹ️</span>
             <span class="bc-return-val">${fmtRet(bot.return_1d)}</span>
           </div>
           <div class="bc-return-item">
-            <span class="bc-return-label">1 maand</span>
+            <span class="bc-return-label" title="Som realized P&L laatste 30 dagen">1 maand</span>
             <span class="bc-return-val">${fmtRet(bot.return_1m)}</span>
           </div>
           <div class="bc-return-item">
-            <span class="bc-return-label">3 maanden</span>
+            <span class="bc-return-label" title="Som realized P&L laatste 90 dagen">3 maanden</span>
             <span class="bc-return-val">${fmtRet(bot.return_3m)}</span>
           </div>
         </div>

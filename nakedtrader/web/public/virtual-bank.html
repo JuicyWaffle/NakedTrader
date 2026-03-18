@@ -102,7 +102,7 @@
   }
 
   /* Stats row */
-  .stats-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
   .stat-card {
     background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
     padding: 14px 16px; display: flex; flex-direction: column; gap: 6px;
@@ -263,6 +263,7 @@
     <a href="/strategies">Strategieen</a>
     <a href="/performance">Performance</a>
     <a href="/assets">Assets</a>
+    <a href="/blitz">Blitz</a>
   </nav>
   <div class="status-bar">
     <div class="status-dot"></div>
@@ -336,6 +337,9 @@ const BOT_COLORS = {
   'breakout': '#ff4466',
   'trend-follow': '#ffaa44',
   'arbitrage': '#aa44ff',
+  'funding-contrarian': '#ff8800',
+  'cross-arb': '#44ddff',
+  'vol-regime': '#ddaa00',
 };
 const BOT_NAMES = {
   'momentum': 'Momentum Rider',
@@ -343,6 +347,9 @@ const BOT_NAMES = {
   'breakout': 'Breakout Hunter',
   'trend-follow': 'Macro Trend',
   'arbitrage': 'Crypto Scalper',
+  'funding-contrarian': 'Funding Contrarian',
+  'cross-arb': 'Cross-Exchange Arb',
+  'vol-regime': 'Volatility Regime',
 };
 
 let mainChart = null;
@@ -463,7 +470,7 @@ function renderPortfolio(portfolio) {
         <span class="pc-val">${p.positions ? p.positions.length : 0} open</span>
       </div>
       <div class="pc-row">
-        <span class="pc-label">PnL</span>
+        <span class="pc-label" title="Rendement = (totale waarde − €100k) / €100k × 100. Inclusief open posities (mark-to-market).">PnL ℹ️</span>
         <span class="pc-val ${pnlClass}">${pnlSign}&euro;${p.pnl_total_eur.toLocaleString('nl-NL', {minimumFractionDigits:0, maximumFractionDigits:0})} (${pnlSign}${p.pnl_total_pct.toFixed(1)}%)</span>
       </div>
       ${posHtml}
@@ -514,39 +521,21 @@ function renderHistoryChart(data) {
     return ts.slice(0, 10);
   });
 
-  // Build dataset per strategy
+  // Build stacked area dataset per strategy
   const sids = Object.keys(BOT_NAMES);
   const datasets = sids.map(sid => ({
     label: BOT_NAMES[sid],
     data: snapshots.map(s => (s.values || {})[sid] ?? null),
     borderColor: BOT_COLORS[sid],
-    backgroundColor: BOT_COLORS[sid] + '15',
-    borderWidth: 2,
+    backgroundColor: BOT_COLORS[sid] + '40',
+    borderWidth: 1,
     pointRadius: 0,
     pointHoverRadius: 4,
     tension: 0.3,
-    fill: false,
+    fill: true,
+    stack: 'saldo',
     spanGaps: true,
   }));
-
-  // Also add a "Totaal" line (sum of all strategies)
-  datasets.push({
-    label: 'Totaal',
-    data: snapshots.map(s => {
-      const vals = s.values || {};
-      let sum = 0;
-      sids.forEach(sid => { if (vals[sid] != null) sum += vals[sid]; });
-      return sum > 0 ? sum : null;
-    }),
-    borderColor: '#eeeef8',
-    backgroundColor: 'rgba(238,238,248,0.05)',
-    borderWidth: 2,
-    borderDash: [6, 3],
-    pointRadius: 0,
-    tension: 0.3,
-    fill: false,
-    spanGaps: true,
-  });
 
   destroyMainChart();
   mainChart = new Chart(ctx, {
@@ -569,10 +558,12 @@ function renderHistoryChart(data) {
       },
       scales: {
         x: {
+          stacked: true,
           ticks: { color: '#55556a', font: monoFont(10), maxRotation: 45, maxTicksLimit: 20 },
           grid: { color: 'rgba(30,30,46,0.5)' },
         },
         y: {
+          stacked: true,
           ticks: { color: '#55556a', font: monoFont(10),
             callback: v => '\u20AC' + (v/1000).toFixed(0) + 'k',
           },

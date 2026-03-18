@@ -11,6 +11,11 @@ from .funding_rate import FundingRateStrategy
 from .cross_arb import CrossArbStrategy
 from .vol_regime import VolRegimeStrategy
 from .equity_momentum import EquityMomentumStrategy
+from .sector_rotation import SectorRotationStrategy
+from .equity_mean_reversion import EquityMeanReversionStrategy
+from .etf_trend_follow import EtfTrendFollowStrategy
+from .dividend_value import DividendValueStrategy
+from .equity_vol_breakout import EquityVolBreakoutStrategy
 
 STRATEGIES = {
     "momentum": MomentumStrategy(),
@@ -22,6 +27,11 @@ STRATEGIES = {
     "cross-arb": CrossArbStrategy(),
     "vol-regime": VolRegimeStrategy(),
     "equity-momentum": EquityMomentumStrategy(),
+    "sector-rotation": SectorRotationStrategy(),
+    "equity-mean-reversion": EquityMeanReversionStrategy(),
+    "etf-trend-follow": EtfTrendFollowStrategy(),
+    "dividend-value": DividendValueStrategy(),
+    "equity-vol-breakout": EquityVolBreakoutStrategy(),
 }
 
 

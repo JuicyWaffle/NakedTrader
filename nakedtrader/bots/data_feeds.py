@@ -320,3 +320,44 @@ def _yfinance_ticker(symbol: str) -> Optional[float]:
     except Exception as e:
         log.warning("yfinance ticker %s mislukt: %s", symbol, e)
         return None
+
+
+# ── Gedeelde equity data helpers ──────────────────────────
+
+def _equity_daily_bars(symbol: str, ibkr, ibkr_ok: bool, period: str = "1y") -> dict:
+    """Haal dagelijkse bars op — IBKR als beschikbaar, yfinance als fallback.
+
+    Returns:
+        dict met numpy arrays: time, open, high, low, close, volume.
+        Leeg dict als geen data beschikbaar.
+    """
+    if ibkr_ok:
+        try:
+            bars = ibkr.get_stock_bars(symbol, duration="1 Y", bar_size="1 day")
+            if bars and len(bars) >= 50:
+                return {
+                    "time": np.array([
+                        b.date.timestamp() if hasattr(b.date, "timestamp") else 0
+                        for b in bars
+                    ]),
+                    "open": np.array([b.open for b in bars]),
+                    "high": np.array([b.high for b in bars]),
+                    "low": np.array([b.low for b in bars]),
+                    "close": np.array([b.close for b in bars]),
+                    "volume": np.array([float(b.volume) for b in bars]),
+                }
+        except Exception:
+            pass
+    return _yfinance_daily_bars(symbol, period=period)
+
+
+def _equity_get_price(symbol: str, ibkr, ibkr_ok: bool) -> float:
+    """Haal huidige prijs op — IBKR of yfinance. Returns 0.0 bij fout."""
+    if ibkr_ok:
+        try:
+            p = ibkr.get_stock_price(symbol)
+            if p > 0:
+                return p
+        except Exception:
+            pass
+    return _yfinance_ticker(symbol) or 0.0
